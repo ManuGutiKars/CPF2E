@@ -4,6 +4,40 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.json">
+<script>
+// ---- Instalar la app (PWA) ----
+window.PF2Install = (function(){
+  var deferred = null, listeners = [];
+  function standalone(){
+    try{ return window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || window.navigator.standalone === true; }catch(e){ return false; }
+  }
+  var ua = navigator.userAgent || '';
+  var ios = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function notify(){ listeners.forEach(function(fn){ try{ fn(); }catch(e){} }); }
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred = e; notify(); });
+  window.addEventListener('appinstalled', function(){ deferred = null; notify(); });
+  function canInstall(){ return !standalone() && (!!deferred || ios); }
+  function showHelp(){
+    var ov = document.createElement('div');
+    ov.className = 'inst-ov';
+    ov.innerHTML = '<div class="inst-box" role="dialog" aria-modal="true"><h3>Instalar en tu ' + (/iphone|ipod/i.test(ua) ? 'iPhone' : 'iPad') + '</h3>' +
+      '<ol><li>Abre esta página en <b>Safari</b>.</li><li>Pulsa el botón <b>Compartir</b> <span class="inst-share">⬆︎</span> (el cuadrado con una flecha hacia arriba).</li>' +
+      '<li>Elige <b>«Añadir a pantalla de inicio»</b> y pulsa <b>Añadir</b>.</li></ol>' +
+      '<p>La app aparecerá con su icono y funcionará también sin conexión.</p><button type="button" class="inst-ok">Entendido</button></div>';
+    ov.addEventListener('click', function(e){ if(e.target === ov || e.target.className === 'inst-ok') ov.remove(); });
+    document.body.appendChild(ov);
+  }
+  function install(){
+    if(deferred){
+      var ev = deferred; deferred = null;
+      ev.prompt();
+      (ev.userChoice || Promise.resolve()).then(function(){ notify(); });
+      notify();
+    } else if(ios && !standalone()) showHelp();
+  }
+  return {canInstall: canInstall, install: install, onChange: function(fn){ listeners.push(fn); }, isStandalone: standalone};
+})();
+</script>
 <meta name="theme-color" content="#1E3428">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -368,7 +402,8 @@
   #printSheet .hj-invi{font-size:8.5pt; border-bottom:1px dotted #ccc; padding:0.6mm 0;}
   #printSheet .hj-coins{display:flex; gap:2mm; margin:1mm 0 2mm;} #printSheet .hj-coins div{width:12mm; height:12mm; border:2px solid #999; border-radius:50%; font-size:7pt; font-weight:700; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:0.8mm;} #printSheet .hj-coins b{font-size:11pt; line-height:1.1;}
   #printSheet .hj-g-p3{display:grid; grid-template-columns:62mm 1fr; gap:3mm;}
-  #printSheet .hj-sketch{border:2px solid #000; height:92mm;}
+  #printSheet .hj-sketch{border:2px solid #000; height:92mm; display:flex; align-items:center; justify-content:center; overflow:hidden;}
+  #printSheet .hj-sketch img{max-width:100%; max-height:100%; object-fit:contain;}
   #printSheet .hj-act{border:1px solid var(--b); min-height:24mm; margin-bottom:1.5mm; padding:1mm; font-size:7pt; color:#555; display:grid; grid-template-columns:2fr 1fr 2fr; align-content:start; gap:1mm;}
   #printSheet .hj-act div{grid-column:1 / -1; margin-top:3mm;}
   #printSheet .hj-g-p4{display:grid; grid-template-columns:62mm 1fr; gap:3mm;}
@@ -437,6 +472,22 @@
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .anc-img{display:block; object-fit:cover; background:rgba(51,38,25,0.06);}
+  .anc-img.card{width:76px; height:76px; border-radius:6px; border:1px solid rgba(201,162,39,0.6); grid-row:1 / span 4; align-self:start;}
+  .wz-card.has-img{display:grid; grid-template-columns:76px 1fr; column-gap:10px; align-content:start;}
+  .wz-card.has-img > span{grid-column:2;}
+  .anc-img.detail{float:right; width:170px; max-width:40%; aspect-ratio:3/4; object-fit:cover; border-radius:8px; margin:0 0 10px 14px; border:2px solid rgba(201,162,39,0.6);}
+  .anc-img.avatar{float:left; width:64px; height:64px; border-radius:50%; margin:0 12px 6px 0; border:2px solid rgba(201,162,39,0.7);}
+  .wz-char.has-img .wz-char-actions{clear:both;}
+  .wz-btn.install-home{border-color:#c9a227; background:rgba(201,162,39,0.15);}
+  .install-btn{display:inline-flex; align-items:center; gap:6px; margin:0 0 10px; padding:6px 14px; border-radius:999px; border:1px solid #c9a227; background:#c9a227; color:#1E3428; font:inherit; font-size:13px; font-weight:700; letter-spacing:.04em; cursor:pointer;}
+  .install-btn:hover{filter:brightness(1.08);}
+  .inst-ov{position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; padding:16px;}
+  .inst-box{background:#f6ecd6; color:#2a1f14; max-width:360px; width:100%; border-radius:12px; padding:18px 20px; box-shadow:0 10px 40px rgba(0,0,0,0.4); font-size:15px; line-height:1.5;}
+  .inst-box h3{margin:0 0 8px; color:#7a3b1f;} .inst-box ol{padding-left:20px; margin:6px 0;} .inst-box p{margin:8px 0; font-size:14px;}
+  .inst-share{display:inline-block; border:1.5px solid currentColor; border-radius:4px; padding:0 4px; font-size:12px;}
+  .inst-ok{margin-top:6px; padding:8px 16px; border:none; border-radius:999px; background:#7a3b1f; color:#fff; font:inherit; cursor:pointer;}
+  @media print{ .install-btn, .inst-ov{display:none !important;} }
   .cp-block{border:1px solid rgba(51,38,25,0.18); border-radius:8px; padding:10px 12px; margin:8px 0; background:rgba(255,255,255,0.35); line-height:1.5;}
   .cp-h{font-size:18px; font-weight:700; color:var(--accent); margin-bottom:4px;} .cp-h small{font-weight:400; color:var(--ink-soft); font-size:13px;}
   .cp-mods, .cp-stats{display:flex; flex-wrap:wrap; gap:4px 14px; margin:2px 0 4px;}
@@ -867,6 +918,7 @@
       <h1>Creador de Personaje PF2E</h1>
       <span class="sub" id="brandSub">Pathfinder 2.ª ed. · conjuros, dotes y fichas</span>
     </div>
+    <button class="install-btn" id="installBtn" type="button" style="display:none;">⬇ Instalar app</button>
     <div class="game-toggle" id="gameToggle">
       <button class="game-btn active" data-game="pf">Pathfinder</button>
       <button class="game-btn" data-game="sf">Starfinder</button>
@@ -1431,7 +1483,9 @@
         (a.vision ? '<dt>Visión</dt><dd>' + escapeHtml(a.vision) + '</dd>' : '') +
         '<dt>Rasgos</dt><dd>' + escapeHtml(a.rasgos.join(', ')) + '</dd></dl>' +
         (a.nota ? '<p class="ficha-note">' + escapeHtml(a.nota) + '</p>' : '');
-      sA.appendChild(detailBox(info));
+      var dbx = detailBox(info);
+      dbx.insertBefore(ancImgEl(a, 'detail'), dbx.firstChild);
+      sA.appendChild(dbx);
       var hOpts = [{group:'Herencias de ' + a.nombre.toLowerCase(), items: a.herencias.map(function(x){ return {value:x.en, label:x.nombre + rarLabel(x.rareza)}; })},
                    {group:'Herencias versátiles', items: BASE.versatiles.map(function(x){ return {value:'v:' + x.id, label:x.nombre + rarLabel(x.rareza)}; })}];
       if(!noSel) sA.appendChild(makeSelect(hOpts, ficha.herencia, 'Elige herencia…', function(v){ change(function(){ ficha.herencia = v; }); }));
@@ -3168,6 +3222,41 @@
     body.appendChild(sF);
   }
 
+  // ---- Imágenes de ascendencias (img/ascendencias/<nombre>.webp|jpg|png) ----
+  var ANC_IMG = {}, ANC_EXT = ['webp', 'jpg', 'png'];
+  function ancSlug(a){ return normName(a.nombre).replace(/ /g, '-'); }
+  // Devuelve una promesa con la URL de la imagen o null si no hay ninguna
+  function ancImgUrl(a){
+    if(!a) return Promise.resolve(null);
+    var slug = ancSlug(a);
+    if(ANC_IMG[slug] !== undefined) return Promise.resolve(ANC_IMG[slug]);
+    if(ANC_IMG['p:' + slug]) return ANC_IMG['p:' + slug];
+    var pr = new Promise(function(res){
+      var i = 0;
+      (function next(){
+        if(i >= ANC_EXT.length){ ANC_IMG[slug] = null; res(null); return; }
+        var url = 'img/ascendencias/' + slug + '.' + ANC_EXT[i++];
+        var im = new Image();
+        im.onload = function(){ ANC_IMG[slug] = url; res(url); };
+        im.onerror = next;
+        im.src = url;
+      })();
+    });
+    ANC_IMG['p:' + slug] = pr;
+    return pr;
+  }
+  // <img> que solo aparece si existe la imagen
+  function ancImgEl(a, cls){
+    var im = document.createElement('img');
+    im.className = 'anc-img ' + (cls || ''); im.alt = a ? a.nombre : '';
+    im.style.display = 'none';
+    ancImgUrl(a).then(function(url){
+      if(url){ im.src = url; im.style.display = ''; if(im.parentNode) im.parentNode.classList.add('has-img'); }
+      else if(im.parentNode) im.parentNode.removeChild(im);
+    });
+    return im;
+  }
+
   // ---- Subir de nivel ----
   function goWizard(step){ wizStep = step; goTab('inicio'); window.scrollTo(0, 0); }
   function levelUp(){
@@ -3285,6 +3374,11 @@
     var bComp = el('button','wz-btn','📖 Conjuros y dotes del personaje');
     bComp.addEventListener('click', function(){ goTab('spells'); });
     actions.appendChild(bNew); actions.appendChild(bImp); actions.appendChild(bComp);
+    if(window.PF2Install && PF2Install.canInstall()){
+      var bInst = el('button','wz-btn install-home','⬇ Instalar la app en este dispositivo');
+      bInst.addEventListener('click', function(){ PF2Install.install(); });
+      actions.appendChild(bInst);
+    }
     hero.appendChild(actions);
     main.appendChild(hero);
 
@@ -3293,6 +3387,11 @@
     characters.forEach(function(name){
       var card = el('div','wz-char' + (name === activeCharacter ? ' active' : ''));
       card.innerHTML = '<div class="wz-char-n">' + escapeHtml(name) + '</div><div class="wz-char-s">' + escapeHtml(charSummary(name)) + '</div>';
+      (function(){
+        var f0 = loadJSON(charStorageKeyFicha(name), null);
+        var a0 = f0 && f0.ascendencia && BASE ? findBy(BASE.ascendencias, 'id', f0.ascendencia) : null;
+        if(a0) card.insertBefore(ancImgEl(a0, 'avatar'), card.firstChild);
+      })();
       var row = el('div','wz-char-actions');
       function btn(label, cls, fn){ var b = el('button','wz-btn small ' + (cls || ''), label); b.addEventListener('click', function(e){ e.stopPropagation(); fn(); }); row.appendChild(b); }
       btn('Modificar', 'primary', function(){ switchCharacter(name); openWizard(firstPendingStep()); });
@@ -3341,6 +3440,7 @@
         cd.innerHTML = '<span class="wz-card-n">' + escapeHtml(it.label) + (it.rareza && it.rareza !== 'Común' ? ' <span class="wz-rar">' + escapeHtml(it.rareza) + '</span>' : '') + '</span>' +
                        (it.meta ? '<span class="wz-card-m">' + escapeHtml(it.meta) + '</span>' : '') +
                        (it.sub ? '<span class="wz-card-s">' + escapeHtml(it.sub) + '</span>' : '');
+        if(it.anc) cd.insertBefore(ancImgEl(it.anc, 'card'), cd.firstChild);
         cd.addEventListener('click', function(){ onPick(isOn && opts.allowNone ? null : it.value); });
         grid.appendChild(cd);
       });
@@ -3525,7 +3625,7 @@
     else if(step.k === 'ascendencia'){
       body.appendChild(el('p','wz-p','La ascendencia es tu pueblo de origen: te da Puntos de Golpe, tamaño, velocidad, idiomas y mejoras de atributo.'));
       cardPicker(body, 'asc', BASE.ascendencias.map(function(x){
-        return {value:x.id, label:x.nombre, rareza:x.rareza, meta:'PG ' + x.pg + ' · ' + x.tamano.join('/') + ' · ' + x.velocidad + ' pies · ' + boostsLabel(x.mejoras) + (x.defectos.length ? ' · defecto ' + boostsLabel(x.defectos) : ''), sub: shortText(x.resumen, 140)};
+        return {value:x.id, anc:x, label:x.nombre, rareza:x.rareza, meta:'PG ' + x.pg + ' · ' + x.tamano.join('/') + ' · ' + x.velocidad + ' pies · ' + boostsLabel(x.mejoras) + (x.defectos.length ? ' · defecto ' + boostsLabel(x.defectos) : ''), sub: shortText(x.resumen, 140)};
       }), ficha.ascendencia, function(v){ change(function(){ if(ficha.ascendencia !== v){ ficha.ascendencia = v; ficha.herencia = null; ficha.mejoras.ancLibres = []; } }); });
       if(a) renderFicha({container: body, only: ['ascendenciaInfo']});
     }
@@ -4886,6 +4986,24 @@
 })();
 </script>
 <script>
+  (function(){
+    var b = document.getElementById('installBtn');
+    if(!b || !window.PF2Install) return;
+    function upd(){
+      var can = PF2Install.canInstall();
+      b.style.display = can ? '' : 'none';
+      var home = document.querySelector('.install-home');
+      if(home && !can) home.remove();
+      var act = document.querySelector('.wz-hero .wz-hero-actions');
+      if(!home && can && act){
+        var h = document.createElement('button'); h.className = 'wz-btn install-home'; h.textContent = '⬇ Instalar la app en este dispositivo';
+        h.addEventListener('click', function(){ PF2Install.install(); }); act.appendChild(h);
+      }
+    }
+    b.addEventListener('click', function(){ PF2Install.install(); });
+    PF2Install.onChange(upd);
+    upd();
+  })();
   if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
       navigator.serviceWorker.register('sw.js').catch(function(err){

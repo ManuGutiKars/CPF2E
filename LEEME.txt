@@ -1,0 +1,64 @@
+IMÁGENES DE LAS ASCENDENCIAS
+=============================
+
+Pon aquí una imagen por ascendencia con el nombre de archivo indicado.
+Formatos admitidos: .webp, .jpg o .png  (por ejemplo: elfo.webp, enano.jpg)
+
+Recomendaciones:
+- Formato vertical o cuadrado; se recorta para encajar (en las tarjetas, cuadrado;
+  en la ficha, 3:4).
+- Unos 600×800 px y menos de 200 KB cada una para que la app cargue rápido
+  (WebP es el formato que menos ocupa).
+- Si una ascendencia no tiene imagen, simplemente no se muestra nada.
+
+Nombre de la ascendencia  ->  archivo (sin extensión)
+Anadi             ->  anadi   (raro)
+Androide          ->  androide   (raro)
+Animal despierto  ->  animal-despierto   (raro)
+Athamaru          ->  athamaru   (poco común)
+Autómata          ->  automata   (raro)
+Azarketi          ->  azarketi   (poco común)
+Centauro          ->  centauro   (poco común)
+Conrasu           ->  conrasu   (raro)
+Deforme           ->  deforme   (raro)
+Draconato         ->  draconato   (raro)
+Elfo              ->  elfo
+Enano             ->  enano
+Esqueleto         ->  esqueleto   (raro)
+Fetchling         ->  fetchling   (poco común)
+Gatonido          ->  gatonido   (poco común)
+Ghoran            ->  ghoran   (raro)
+Gnomo             ->  gnomo
+Goblin            ->  goblin
+Goloma            ->  goloma   (raro)
+Halfling          ->  halfling
+Hobgoblin         ->  hobgoblin   (poco común)
+Hombresaurio      ->  hombresaurio   (poco común)
+Humano            ->  humano
+Jotunborn         ->  jotunborn   (raro)
+Kashrishi         ->  kashrishi   (raro)
+Kholo             ->  kholo   (poco común)
+Kitsune           ->  kitsune   (poco común)
+Kobold            ->  kobold   (poco común)
+Leshy             ->  leshy
+Minotauro         ->  minotauro   (poco común)
+Nagaji            ->  nagaji   (poco común)
+Orco              ->  orco
+Poppet            ->  poppet   (raro)
+Ratonido          ->  ratonido   (poco común)
+Samsaran          ->  samsaran   (poco común)
+Sarangay          ->  sarangay   (raro)
+Shisk             ->  shisk   (raro)
+Shoony            ->  shoony   (raro)
+Sirénido          ->  sirenido   (poco común)
+Sprite            ->  sprite   (raro)
+Strix             ->  strix   (raro)
+Surki             ->  surki   (raro)
+Tanuki            ->  tanuki   (poco común)
+Tengu             ->  tengu   (poco común)
+Tripkee           ->  tripkee   (poco común)
+Vanara            ->  vanara   (poco común)
+Vishkanya         ->  vishkanya   (raro)
+Wayang            ->  wayang   (poco común)
+Yaksha            ->  yaksha   (raro)
+Yaoguai           ->  yaoguai   (raro)
