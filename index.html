@@ -366,7 +366,7 @@
   #printSheet .hj-inv{border:1px solid var(--b); min-height:35mm; margin-bottom:2mm; padding:1mm;} #printSheet .hj-inv.tall{min-height:60mm;}
   #printSheet .hj-invh{display:flex; justify-content:space-between; font-size:7pt; color:#555; border-bottom:1px solid #ddd;}
   #printSheet .hj-invi{font-size:8.5pt; border-bottom:1px dotted #ccc; padding:0.6mm 0;}
-  #printSheet .hj-coins{display:flex; gap:2mm; margin:1mm 0 2mm;} #printSheet .hj-coins div{width:12mm; height:12mm; border:2px solid #999; border-radius:50%; font-size:7pt; font-weight:700; display:flex; align-items:flex-start; justify-content:center;}
+  #printSheet .hj-coins{display:flex; gap:2mm; margin:1mm 0 2mm;} #printSheet .hj-coins div{width:12mm; height:12mm; border:2px solid #999; border-radius:50%; font-size:7pt; font-weight:700; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:0.8mm;} #printSheet .hj-coins b{font-size:11pt; line-height:1.1;}
   #printSheet .hj-g-p3{display:grid; grid-template-columns:62mm 1fr; gap:3mm;}
   #printSheet .hj-sketch{border:2px solid #000; height:92mm;}
   #printSheet .hj-act{border:1px solid var(--b); min-height:24mm; margin-bottom:1.5mm; padding:1mm; font-size:7pt; color:#555; display:grid; grid-template-columns:2fr 1fr 2fr; align-content:start; gap:1mm;}
@@ -435,6 +435,23 @@
   .wz-spell:hover{background:var(--accent-soft);} .wz-spell.on{background:var(--accent-soft);}
   .wz-spell input{margin-top:4px;}
   .wz-spell-t small{color:var(--ink-soft);}
+  .wz-spell-t{flex:1; cursor:pointer;}
+  .eq-purse{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center; padding:10px 12px; margin:6px 0 10px; border:1px solid rgba(51,38,25,0.18); border-radius:8px; background:var(--accent-soft);}
+  .eq-purse.over{border-color:#a33; background:rgba(170,51,51,0.10);} .eq-purse.over .eq-purse-l b{color:#a33;}
+  .eq-purse-in input{width:70px; padding:3px 6px; font:inherit;}
+  .eq-kit-items{margin:4px 0 6px;}
+  .eq-kit-opt{display:flex; gap:8px; align-items:flex-start; padding:2px 0; cursor:pointer;}
+  .eq-kit-opt input{margin-top:4px;}
+  .eq-kit-act{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:8px;}
+  .eq-mat{display:flex; flex-direction:column; gap:4px; margin:4px 0 8px;}
+  .eq-mat-row{display:flex; gap:10px; align-items:center; padding:4px 0; border-bottom:1px solid rgba(51,38,25,0.08);}
+  .eq-mat-n{flex:1;} .eq-mat-n small{color:var(--ink-soft);}
+  .eq-mat-p{white-space:nowrap; color:var(--ink-soft);}
+  .eq-qty{width:52px; padding:3px 4px; font:inherit;}
+  .eq-mat-add{max-width:100%;}
+  .wz-spell-chev{display:inline-block; color:var(--ink-soft); font-size:12px; transition:transform .15s;}
+  .wz-spell.open .wz-spell-chev{transform:rotate(90deg);}
+  .wz-spell-det{margin:0 8px 8px 34px; padding:10px 12px; border-left:3px solid var(--accent-soft); background:rgba(255,255,255,0.5); border-radius:0 6px 6px 0;}
   .wz-nav{display:flex; justify-content:space-between; gap:10px; margin:24px 0 10px; padding-top:14px; border-top:1px solid rgba(51,38,25,0.2);}
   @media (max-width:640px){ .wz-cards{grid-template-columns:1fr; max-height:none;} .wz-step-t{display:none;} .wz-step.cur .wz-step-t{display:inline;} }
 
@@ -1781,6 +1798,8 @@
     if(!e.resistencia) e.resistencia = 0;
     if(e.escudo === undefined) e.escudo = null;
     if(!Array.isArray(e.armas)) e.armas = [];
+    if(!Array.isArray(e.material)) e.material = [];
+    if(typeof e.dinero !== 'number') e.dinero = 1500;
     return e;
   }
   function eqData(){ return (BASE && BASE.equipo) || {armaduras:[], escudos:[], armas:[]}; }
@@ -1792,6 +1811,116 @@
   }
   function curArmor(){ var e = eqState(); return e.armadura ? findBy(eqData().armaduras, 'id', e.armadura) : null; }
   function curShield(){ var e = eqState(); return e.escudo ? findBy(eqData().escudos, 'id', e.escudo) : null; }
+  // ---- Dinero (en piezas de cobre: 1 po = 10 pp = 100 pc) ----
+  function fmtMoney(cp){
+    var neg = cp < 0; cp = Math.abs(cp);
+    var po = Math.floor(cp / 100), pp = Math.floor(cp % 100 / 10), pc = cp % 10, out = [];
+    if(po) out.push(po + ' po'); if(pp) out.push(pp + ' pp'); if(pc || !out.length) out.push(pc + ' pc');
+    return (neg ? '−' : '') + out.join(', ');
+  }
+  function matItem(id){ return findBy(eqData().material || [], 'id', id); }
+  function matLabel(m, cant){
+    if(!m) return '';
+    if(m.lote) return m.nombre + ' (' + (cant || 1) * m.lote + ')';
+    return (cant > 1 ? cant + ' × ' : '') + m.nombre;
+  }
+  function weaponLabel(w, cant){ return w ? (cant > 1 ? cant + ' × ' : '') + w.nombre : ''; }
+  // Lo que cuesta el equipo elegido (las runas no se cuentan)
+  function eqSpent(){
+    var e = eqState(), D = eqData(), t = 0;
+    var ar = curArmor(), sh = curShield();
+    if(ar) t += ar.precio || 0;
+    if(sh) t += sh.precio || 0;
+    e.armas.forEach(function(s){ var w = findBy(D.armas, 'id', s.id); if(w) t += (w.precio || 0) * (s.cant || 1); });
+    e.material.forEach(function(s){ var m = matItem(s.id); if(m) t += (m.precio || 0) * (s.cant || 1); });
+    return t;
+  }
+  function classKit(){ var c = fClase(); return c && eqData().kits ? eqData().kits[c.id] || null : null; }
+  var kitOpts = {};
+  function kitTotal(k, sel){
+    var t = k.precio;
+    k.opciones.forEach(function(o, i){ if(sel[i]) t += o.precio; });
+    return t;
+  }
+  function kitOptionLabel(o){
+    var D = eqData(), parts = [];
+    if(o.armadura){ var a = findBy(D.armaduras, 'id', o.armadura); parts.push(a ? a.nombre : o.armadura); }
+    (o.armas || []).forEach(function(w){ parts.push(weaponLabel(findBy(D.armas, 'id', w.id), w.cant)); });
+    if(o.escudo){ var s = findBy(D.escudos, 'id', o.escudo); parts.push(s ? s.nombre : o.escudo); }
+    (o.material || []).forEach(function(m){ parts.push(matLabel(matItem(m.id), m.cant)); });
+    return parts.join(' y ');
+  }
+  function applyKit(k, sel){
+    var e = eqState();
+    e.armadura = k.armadura || null; e.escudo = k.escudo || null; e.armaduraPotencia = 0; e.resistencia = 0;
+    e.armas = k.armas.map(function(w){ return {id: w.id, cant: w.cant, potencia: 0, golpe: 0}; });
+    e.material = k.material.map(function(m){ return {id: m.id, cant: m.cant}; });
+    k.opciones.forEach(function(o, i){
+      if(!sel[i]) return;
+      if(o.armadura) e.armadura = o.armadura;
+      if(o.escudo) e.escudo = o.escudo;
+      (o.armas || []).forEach(function(w){ e.armas.push({id: w.id, cant: w.cant, potencia: 0, golpe: 0}); });
+      (o.material || []).forEach(function(m){ addMaterial(e, m.id, m.cant); });
+    });
+    e.kit = fClase().id;
+  }
+  function addMaterial(e, id, n){
+    var cur = e.material.filter(function(x){ return x.id === id; })[0];
+    if(cur) cur.cant += n; else e.material.push({id: id, cant: n});
+  }
+  function renderKitBox(parent){
+    var k = classKit(), c = fClase();
+    if(!k) return;
+    var D = eqData();
+    var key = c.id;
+    var sel = kitOpts[key] = kitOpts[key] || {};
+    var box = el('div','ficha-grants eq-kit');
+    box.appendChild(el('div','ficha-boost-label', 'Kit de ' + escapeHtml(c.nombre.toLowerCase()) + (k.oficial ? ' <span class="wz-rar">oficial · ' + escapeHtml(k.fuente) + '</span>' : ' <span class="wz-rar">sugerido</span>')));
+    var items = [];
+    var ar = findBy(D.armaduras, 'id', k.armadura); if(ar) items.push(ar.nombre);
+    var sh = findBy(D.escudos, 'id', k.escudo); if(sh) items.push(sh.nombre);
+    k.armas.forEach(function(w){ items.push(weaponLabel(findBy(D.armas, 'id', w.id), w.cant)); });
+    k.material.forEach(function(m){ items.push(matLabel(matItem(m.id), m.cant)); });
+    box.appendChild(el('div','eq-kit-items', escapeHtml(items.join(', ')) + ' — <b>' + fmtMoney(k.precio) + '</b>'));
+    if(k.opciones.length){
+      var hasG = k.opciones.some(function(o){ return o.grupo; });
+      box.appendChild(el('div','ficha-note', hasG ? 'Opciones (elige como mucho una de las marcadas con ◆):' : 'Opciones:'));
+      k.opciones.forEach(function(o, i){
+        var lab = el('label','eq-kit-opt');
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!sel[i];
+        cb.addEventListener('change', function(){
+          if(cb.checked && o.grupo) k.opciones.forEach(function(o2, j){ if(j !== i && o2.grupo === o.grupo) sel[j] = false; });
+          sel[i] = cb.checked; render();
+        });
+        lab.appendChild(cb);
+        lab.appendChild(el('span', null, (o.grupo ? '◆ ' : '') + escapeHtml(kitOptionLabel(o)) + ' <small>(+' + fmtMoney(o.precio) + ')</small>'));
+        box.appendChild(lab);
+      });
+    }
+    if(k.nota) box.appendChild(el('div','ficha-note', escapeHtml(k.nota)));
+    var tot = kitTotal(k, sel), e = eqState();
+    var act = el('div','eq-kit-act');
+    var b = el('button','wz-btn primary small', 'Usar este kit (' + fmtMoney(tot) + ')');
+    b.disabled = tot > e.dinero;
+    b.addEventListener('click', function(){ change(function(){ applyKit(k, sel); }); });
+    act.appendChild(b);
+    act.appendChild(el('span','ficha-note', tot > e.dinero ? 'No te llega el dinero.' : 'Te quedarían ' + fmtMoney(e.dinero - tot) + '. Sustituye el equipo que tengas ahora.'));
+    box.appendChild(act);
+    parent.appendChild(box);
+  }
+  function renderPurse(parent){
+    var e = eqState(), spent = eqSpent(), left = e.dinero - spent;
+    var box = el('div','eq-purse' + (left < 0 ? ' over' : ''));
+    var po = el('label','eq-purse-in', 'Dinero inicial ');
+    var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.value = String(Math.round(e.dinero / 100 * 100) / 100);
+    inp.addEventListener('change', function(){ var v = parseFloat(inp.value); change(function(){ e.dinero = isNaN(v) || v < 0 ? 1500 : Math.round(v * 100); }); });
+    po.appendChild(inp); po.appendChild(document.createTextNode(' po'));
+    box.appendChild(po);
+    box.appendChild(el('span','eq-purse-s', 'Gastado: <b>' + fmtMoney(spent) + '</b>'));
+    box.appendChild(el('span','eq-purse-l', (left < 0 ? 'Te pasas: ' : 'Te queda: ') + '<b>' + fmtMoney(Math.abs(left)) + '</b>'));
+    parent.appendChild(box);
+    if(ficha.nivel > 1 && e.dinero === 1500) parent.appendChild(el('div','ficha-note','A nivel 1 se empieza con 15 po. Si empiezas a más nivel, cambia el dinero inicial según te indique tu DJ.'));
+  }
   function armorInfo(mod){
     var e = eqState(), ar = curArmor();
     var cat = ar ? ar.categoria : 'sinArmadura';
@@ -1838,12 +1967,20 @@
     return {atk: atk, map: agile ? [4,8] : [5,10], dmg: dmg, rank: rank};
   }
 
+  function qtyInput(slot){
+    var q = document.createElement('input'); q.type = 'number'; q.min = '1'; q.max = '99'; q.className = 'eq-qty'; q.title = 'Cantidad';
+    q.value = String(slot.cant || 1);
+    q.addEventListener('change', function(){ var v = parseInt(q.value, 10); change(function(){ slot.cant = isNaN(v) || v < 1 ? 1 : Math.min(99, v); }); });
+    return q;
+  }
   function renderEquipoSection(main){
     var c = fClase();
     var sE = section('Equipo');
     if(!BASE || !BASE.equipo){ sE.appendChild(el('div','ficha-note','Falta la sección de equipo en base.json.')); main.appendChild(sE); return; }
     var e = eqState(), D = eqData();
     var mod = computeAttrs().mod;
+    renderPurse(sE);
+    renderKitBox(sE);
     function rar(x){ return rarLabel(x.rareza); }
     function row(label, control){ var r = el('div','ficha-slot'); r.appendChild(el('span','ficha-slot-l', escapeHtml(label))); r.appendChild(control); sE.appendChild(r); return r; }
     function numSelect(val, max, fmt, onSet){
@@ -1852,7 +1989,7 @@
     // Armadura
     var groups = ['sinArmadura','ligera','intermedia','pesada'].map(function(cat){
       return {group: 'Armadura ' + EQ_CAT_LABEL[cat] + ' (' + PROF_LABEL[eqRank(cat)].toLowerCase() + ')',
-              items: D.armaduras.filter(function(a){ return a.categoria === cat; }).map(function(a){ return {value:a.id, label:a.nombre + ' — CA +' + a.ca + rar(a)}; })};
+              items: D.armaduras.filter(function(a){ return a.categoria === cat; }).map(function(a){ return {value:a.id, label:a.nombre + ' — CA +' + a.ca + rar(a) + (a.precio ? ' · ' + fmtMoney(a.precio) : '')}; })};
     });
     row('Armadura', makeSelect(groups, e.armadura, 'Sin armadura', function(v){ change(function(){ e.armadura = v; }); }));
     var info = armorInfo(mod);
@@ -1869,18 +2006,19 @@
       row('Runa de resistencia', numSelect(e.resistencia, 3, function(n){ return n ? ['','Resistente','Resistente mayor','Resistente superior'][n] + ' (+' + n + ' salvaciones)' : 'Sin runa'; }, function(n){ e.resistencia = n; }));
     }
     // Escudo
-    row('Escudo', makeSelect(D.escudos.map(function(s){ return {value:s.id, label:s.nombre + ' — CA +' + s.ca + ', dureza ' + s.dureza + rar(s)}; }), e.escudo, 'Sin escudo', function(v){ change(function(){ e.escudo = v; }); }));
+    row('Escudo', makeSelect(D.escudos.map(function(s){ return {value:s.id, label:s.nombre + ' — CA +' + s.ca + ', dureza ' + s.dureza + rar(s) + (s.precio ? ' · ' + fmtMoney(s.precio) : '')}; }), e.escudo, 'Sin escudo', function(v){ change(function(){ e.escudo = v; }); }));
     // Armas
     sE.appendChild(el('div','ficha-boost-label','Armas'));
     var wGroups = ['sinArmas','simple','marcial','avanzada'].map(function(cat){
       return {group: 'Armas ' + EQ_CAT_LABEL[cat] + ' (' + PROF_LABEL[eqRank(cat)].toLowerCase() + ')',
-              items: D.armas.filter(function(w){ return w.categoria === cat; }).map(function(w){ return {value:w.id, label:w.nombre + ' — ' + w.dado + ' ' + (w.tipoDano||'') + rar(w)}; })};
+              items: D.armas.filter(function(w){ return w.categoria === cat; }).map(function(w){ return {value:w.id, label:w.nombre + ' — ' + w.dado + ' ' + (w.tipoDano||'') + rar(w) + (w.precio ? ' · ' + fmtMoney(w.precio) : '')}; })};
     });
     e.armas.forEach(function(slot, i){
       var w = findBy(D.armas, 'id', slot.id);
       var r = el('div','ficha-weapon');
       var top = el('div','ficha-slot');
       top.appendChild(makeSelect(wGroups, slot.id, 'Elige arma…', function(v){ change(function(){ if(v) slot.id = v; else e.armas.splice(i,1); }); }));
+      top.appendChild(qtyInput(slot));
       top.appendChild(makeSelect([{value:'1',label:'+1'},{value:'2',label:'+2'},{value:'3',label:'+3'}], slot.potencia ? String(slot.potencia) : null, 'Potencia +0', function(v){ change(function(){ slot.potencia = parseInt(v||'0',10); }); }));
       top.appendChild(makeSelect([{value:'1',label:'Golpe (2 dados)'},{value:'2',label:'Golpe mayor (3 dados)'},{value:'3',label:'Golpe superior (4 dados)'}], slot.golpe ? String(slot.golpe) : null, 'Sin runa de golpe', function(v){ change(function(){ slot.golpe = parseInt(v||'0',10); }); }));
       var del = el('button','char-btn danger ficha-del','Quitar');
@@ -1901,6 +2039,31 @@
     add.addEventListener('click', function(){ change(function(){ e.armas.push({id: 'Fist', potencia:0, golpe:0}); }); });
     sE.appendChild(add);
     sE.appendChild(el('div','ficha-note','Ataque: competencia + Fuerza (Destreza a distancia o con sutil) + runa de potencia. Entre paréntesis, el 2.º y 3.er ataque. El daño incluye Fuerza (cuerpo a cuerpo y arrojadizas; la mitad con propulsión) y la especialización en armas.'));
+    // Material
+    sE.appendChild(el('div','ficha-boost-label','Material'));
+    var ml = el('div','eq-mat');
+    e.material.forEach(function(slot, i){
+      var m = matItem(slot.id); if(!m) return;
+      var r = el('div','eq-mat-row');
+      r.appendChild(qtyInput(slot));
+      var t = el('span','eq-mat-n', '<b>' + escapeHtml(m.nombre) + '</b>' + (m.lote ? ' <small>(' + (slot.cant || 1) * m.lote + ' unidades)</small>' : '') +
+        (m.nota ? ' <small>· ' + escapeHtml(m.nota) + '</small>' : '') + ' <small>· impedimenta ' + escapeHtml(m.impedimenta) + '</small>');
+      if(m.id === "Adventurer's Pack") t.innerHTML += '<br><small>Mochila, petate, 10 tizas, pedernal y eslabón, 50 pies de cuerda, raciones para 2 semanas, jabón, 5 antorchas y un odre.</small>';
+      r.appendChild(t);
+      r.appendChild(el('span','eq-mat-p', fmtMoney((m.precio || 0) * (slot.cant || 1))));
+      var del = el('button','char-btn danger ficha-del','Quitar');
+      del.addEventListener('click', function(){ change(function(){ e.material.splice(i,1); }); });
+      r.appendChild(del);
+      ml.appendChild(r);
+    });
+    if(!e.material.length) ml.appendChild(el('div','ficha-note','Aún no llevas material.'));
+    sE.appendChild(ml);
+    var mSel = makeSelect((D.material || []).map(function(m){ return {value:m.id, label:m.nombre + (m.lote ? ' (' + m.lote + ')' : '') + ' — ' + fmtMoney(m.precio)}; }), null, '+ Comprar material…', function(v){
+      if(v) change(function(){ addMaterial(e, v, 1); });
+    });
+    mSel.classList.add('eq-mat-add');
+    sE.appendChild(mSel);
+    sE.appendChild(el('div','ficha-note','Los precios son los del Player Core. Las runas no se descuentan del dinero.'));
     main.appendChild(sE);
   }
 
@@ -2393,15 +2556,23 @@
       rowsL += '<div class="hj-lv' + (L <= lvl ? '' : ' future') + '"><div class="hj-lvn">' + (L === 1 ? '<small>Nivel</small>' : '') + L + '</div><div class="hj-lvl">' + left.join('<br>') + boosts + '</div><div class="hj-lvr">' + rightC.join('<br>') + '</div></div>';
     }
     var inv = [];
-    (eq.armas || []).forEach(function(slot){ var w = findBy(eqData().armas,'id',slot.id); if(w) inv.push(w.nombre + (slot.potencia ? ' +' + slot.potencia : '')); });
+    (eq.armas || []).forEach(function(slot){ var w = findBy(eqData().armas,'id',slot.id); if(w) inv.push(weaponLabel(w, slot.cant || 1) + (slot.potencia ? ' +' + slot.potencia : '')); });
     if(sh) inv.push(sh.nombre);
     var worn = ai.armor ? [ai.armor.nombre + (ai.pot ? ' +' + ai.pot : '') + (res ? ' (resistente +' + res + ')' : '')] : [];
+    var cons = [];
+    (eq.material || []).forEach(function(slot){
+      var mi = matItem(slot.id); if(!mi) return;
+      var lab = matLabel(mi, slot.cant || 1) + ' · ' + mi.impedimenta;
+      if(mi.lote || /Smoke Ball|Rations|Torch|Candle|Oil|Chalk/.test(mi.id)) cons.push(lab); else worn.push(lab);
+    });
+    var left$ = eq.dinero - eqSpent();
+    var coin = left$ >= 0 ? {pc: left$ % 10, pp: Math.floor(left$ % 100 / 10), po: Math.floor(left$ / 100)} : null;
     var p2 = '<div class="hj-g-p2"><div>' + '<div class="hj-g2h">' + title('Dotes de ascendencia y generales') + title('Aptitudes de clase') + '</div><div class="hj-levels">' + rowsL + '</div></div>' +
       '<div>' + title('Inventario') + '<div class="hj-inv"><div class="hj-invh">Objetos sostenidos<span>Imp</span></div>' + inv.map(function(x){ return '<div class="hj-invi">' + E(x) + '</div>'; }).join('') + '</div>' +
-      '<div class="hj-inv"><div class="hj-invh">Consumibles<span>Imp</span></div></div>' +
+      '<div class="hj-inv"><div class="hj-invh">Consumibles<span>Imp</span></div>' + cons.map(function(x){ return '<div class="hj-invi">' + E(x) + '</div>'; }).join('') + '</div>' +
       '<div class="hj-inv tall"><div class="hj-invh">Objetos puestos<span>Investidos · Imp</span></div>' + worn.map(function(x){ return '<div class="hj-invi">' + E(x) + '</div>'; }).join('') + '</div>' +
       title('Impedimenta') + '<div class="hj-rem"><div><b>Objetos ligeros</b> 10 = Imp. 1<br><b>Impedido</b> 5 + Fue (' + (5 + m.fue) + ')<br><b>Máximo</b> 10 + Fue (' + (10 + m.fue) + ')<br><b>Máx. investidos</b> 10</div></div>' +
-      title('Riqueza') + '<div class="hj-coins"><div>PC</div><div>PP</div><div>PO</div><div>PPT</div></div><div class="hj-inv"><div class="hj-invh">Gemas y objetos de arte<span>Precio · Imp</span></div></div>' +
+      title('Riqueza') + '<div class="hj-coins"><div>PC' + (coin ? '<b>' + coin.pc + '</b>' : '') + '</div><div>PP' + (coin ? '<b>' + coin.pp + '</b>' : '') + '</div><div>PO' + (coin ? '<b>' + coin.po + '</b>' : '') + '</div><div>PPT</div></div><div class="hj-inv"><div class="hj-invh">Gemas y objetos de arte<span>Precio · Imp</span></div></div>' +
       '</div></div>';
     p2 += '<div class="hj-foot"><span>Página dos — Aptitudes e inventario</span><span></span></div>';
 
@@ -2701,6 +2872,7 @@
   function boostsLabel(list){ return list.map(function(k){ return k === 'libre' ? 'libre' : (ATR_NAME[k] || k); }).join(', '); }
 
   // ---- Paso de conjuros: elegir directamente de la lista ----
+  var wizSpellOpen = {};
   function renderSpellPicker(container){
     var ci = casterInfo();
     if(!ci) return;
@@ -2733,8 +2905,8 @@
       var q = normName(inp.value);
       pool.filter(function(sp){ return !q || normName(sp.name + ' ' + (sp.desc || '')).indexOf(q) !== -1 || marks[sp.id]; }).forEach(function(sp){
         var on = !!marks[sp.id];
-        var row = el('label','wz-spell' + (on ? ' on' : ''));
-        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = on;
+        var row = el('div','wz-spell' + (on ? ' on' : '') + (wizSpellOpen[sp.id] ? ' open' : ''));
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = on; cb.title = 'Marcar';
         cb.addEventListener('change', function(){
           if(ci.espontaneo) toggleKnownSpell(sp.id); else toggleSpell(sp.id);
           render();
@@ -2742,9 +2914,18 @@
         row.appendChild(cb);
         var txt = el('span','wz-spell-t', '<b>' + escapeHtml(sp.name) + '</b>' + (sp.rarity && sp.rarity !== 'Común' ? ' <span class="wz-rar">' + escapeHtml(sp.rarity) + '</span>' : '') +
           (auto.indexOf(String(sp.id)) !== -1 ? ' <span class="wz-rar">concedido</span>' : '') +
-          (sp.cast ? ' <small>· ' + escapeHtml(sp.cast) + '</small>' : '') + '<br><small>' + escapeHtml(sp.desc || '') + '</small>');
+          (sp.cast ? ' <small>· ' + escapeHtml(sp.cast) + '</small>' : '') + ' <span class="wz-spell-chev">▸</span><br><small>' + escapeHtml(sp.desc || '') + '</small>');
         row.appendChild(txt);
+        var det = el('div','spell-detail wz-spell-det');
+        function fill(){ if(wizSpellOpen[sp.id] && !det.innerHTML) det.innerHTML = buildDetailHtml(sp); det.style.display = wizSpellOpen[sp.id] ? '' : 'none'; }
+        fill();
+        txt.addEventListener('click', function(){
+          wizSpellOpen[sp.id] = !wizSpellOpen[sp.id];
+          row.classList.toggle('open', !!wizSpellOpen[sp.id]);
+          fill();
+        });
         list.appendChild(row);
+        list.appendChild(det);
       });
     }
     inp.addEventListener('input', function(){ wizFilter.conj = inp.value; draw(); });
@@ -2905,7 +3086,7 @@
       renderFicha({container: body, only: ['foco']});
     }
     else if(step.k === 'equipo'){
-      body.appendChild(el('p','wz-p','Elige armadura, escudo y armas. La CA, los ataques y el daño se calculan solos.'));
+      body.appendChild(el('p','wz-p','Empiezas con 15 po. Puedes usar el kit de tu clase o comprar cada cosa por separado; lo que gastes se descuenta solo. La CA, los ataques y el daño se calculan solos.'));
       renderFicha({container: body, only: ['equipo']});
     }
     else if(step.k === 'resumen'){

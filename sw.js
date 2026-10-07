@@ -1,6 +1,6 @@
 // Service worker del Creador de Personaje PF2E — permite abrir la app sin conexión.
 // Sube la version cada vez que reemplaces index.html o los JSON para forzar la actualizacion.
-const CACHE_NAME = 'creador-pf2e-cache-v7';
+const CACHE_NAME = 'creador-pf2e-cache-v9';
 const ASSETS = [
   './',
   './index.html',
