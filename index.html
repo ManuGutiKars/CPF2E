@@ -1144,6 +1144,24 @@
   var ATR_NAME = {}; ATRS.forEach(function(a){ ATR_NAME[a.k] = a.n; });
   var PROF_LABEL = ['No entrenado','Entrenado','Experto','Maestro','Legendario'];
   var MEJORA_NIVELES = [5,10,15,20];
+  var GRADUAL_NIVELES = [2,3,4,5,7,8,9,10,12,13,14,15,17,18,19,20];
+  // Reglas opcionales del GM Core
+  function reglas(){ if(!ficha.reglas || typeof ficha.reglas !== 'object') ficha.reglas = {}; return ficha.reglas; }
+  function isGradual(){ return !!reglas().mejorasGraduales; }
+  function isFreeArch(){ return !!reglas().arquetipoGratis; }
+  function gradualSet(L){ return Math.ceil(L / 5) * 5; }
+  function gradualMap(){ if(!ficha.mejoras.g || typeof ficha.mejoras.g !== 'object') ficha.mejoras.g = {}; return ficha.mejoras.g; }
+  // Atributos ya mejorados en el mismo bloque (2-5, 7-10…) por otros niveles
+  function gradualTaken(L){
+    var g = gradualMap(), set = gradualSet(L);
+    return GRADUAL_NIVELES.filter(function(x){ return x !== L && gradualSet(x) === set && g[x]; }).map(function(x){ return g[x]; });
+  }
+  function gradualRow(L){
+    var g = gradualMap(), taken = gradualTaken(L);
+    return boostRow('Nivel ' + L, g[L] ? [g[L]] : [], 1, function(k){ return taken.indexOf(k) === -1; },
+      function(k){ change(function(){ if(g[L] === k) delete g[L]; else g[L] = k; }); }, null,
+      taken.length ? 'Ya mejorados en este bloque: ' + taken.map(function(k){ return ATR_NAME[k]; }).join(', ') + '.' : '');
+  }
 
   function charStorageKeyFicha(name){ return "pf2e-grimorio-ficha::" + name; }
   function emptyFicha(){
@@ -1210,7 +1228,8 @@
       boost(opts.length === 1 ? opts[0] : ficha.mejoras.clase);
     }
     ficha.mejoras.n1.slice(0,4).forEach(boost);
-    MEJORA_NIVELES.forEach(function(n){ if(ficha.nivel >= n) ficha.mejoras['n'+n].slice(0,4).forEach(boost); });
+    if(isGradual()){ var gm = gradualMap(); GRADUAL_NIVELES.forEach(function(n){ if(ficha.nivel >= n && gm[n]) boost(gm[n]); }); }
+    else MEJORA_NIVELES.forEach(function(n){ if(ficha.nivel >= n) ficha.mejoras['n'+n].slice(0,4).forEach(boost); });
     return {mod: mod, partial: partial};
   }
   function fmtMod(n){ return (n >= 0 ? '+' : '') + n; }
@@ -1235,6 +1254,7 @@
       if(c.huecos.clase.indexOf(lv) !== -1) slots.push({tipo:'clase', nivel:lv, label:'Dote de ' + c.nombre.toLowerCase()});
       if(c.huecos.habilidad.indexOf(lv) !== -1) slots.push({tipo:'habilidad', nivel:lv, label:'Dote de habilidad'});
       if(c.huecos.general.indexOf(lv) !== -1) slots.push({tipo:'general', nivel:lv, label:'Dote general'});
+      if(isFreeArch() && lv % 2 === 0) slots.push({tipo:'arquetipo', nivel:lv, label:'Dote de arquetipo (gratis)'});
     }
     return slots;
   }
@@ -1255,6 +1275,15 @@
       if(a) cats.push(a.categoriaDotes);
       if(h && h.versatil) cats.push(h.versatil.categoriaDotes);
       return {main: pf.filter(function(ft){ return ft.group === 'ancestry' && cats.indexOf(ft.category) !== -1; }), extra: []};
+    }
+    if(s.tipo === 'arquetipo'){
+      var chosenA = {};
+      Object.keys(ficha.dotes).forEach(function(k){
+        var d = ficha.dotes[k]; if(!d || k === slotKey(s)) return;
+        var ft = FEATS.filter(function(f){ return f.id === d.id; })[0];
+        if(ft && isArchetypeFeat(ft) && hasTrait(ft,'dedicación')) chosenA[ft.category] = true;
+      });
+      return {main: pf.filter(function(ft){ return ft.group === 'class' && isArchetypeFeat(ft) && (hasTrait(ft,'dedicación') || chosenA[ft.category]); }), extra: []};
     }
     if(s.tipo === 'clase'){
       var main = pf.filter(function(ft){ return ft.group === 'class' && !isArchetypeFeat(ft) && c && ft.category === c.categoriaDotes; });
@@ -1354,7 +1383,8 @@
       facts.appendChild(ebtn);
       facts.appendChild(levelUpButton('small'));
       main.appendChild(facts);
-      main.appendChild(el('div','ficha-note','La ficha es de solo lectura. Para cambiar algo usa el creador; para pasar de nivel, «Subir a nivel».'));
+      main.appendChild(el('div','ficha-note','La ficha es de solo lectura. Para cambiar algo usa el creador; para pasar de nivel, «Subir a nivel».' +
+        ((isFreeArch() || isGradual()) ? ' Reglas opcionales: ' + [isFreeArch() ? 'arquetipo gratis' : '', isGradual() ? 'mejoras graduales' : ''].filter(Boolean).join(' y ') + '.' : '')));
     }
     }
 
@@ -1517,7 +1547,12 @@
         function(k){ change(function(){ ficha.mejoras.clase = (ficha.mejoras.clase === k) ? null : k; }); }));
     }
     sM.appendChild(boostRow('Nivel 1 (libres)', ficha.mejoras.n1, 4, function(){ return true; }, function(k){ change(function(){ toggleIn(ficha.mejoras.n1, k); }); }));
-    MEJORA_NIVELES.forEach(function(n){
+    if(isGradual()){
+      var gl = GRADUAL_NIVELES.filter(function(n){ return ficha.nivel >= n; });
+      if(gl.length) sM.appendChild(el('div','ficha-note','Mejoras graduales: 1 mejora en cada nivel indicado; dentro de un mismo bloque (2–5, 7–10, 12–15, 17–20) no puedes repetir atributo.'));
+      gl.forEach(function(n){ sM.appendChild(gradualRow(n)); });
+    }
+    else MEJORA_NIVELES.forEach(function(n){
       if(ficha.nivel >= n) sM.appendChild(boostRow('Nivel ' + n, ficha.mejoras['n'+n], 4, function(){ return true; }, function(k){ change(function(){ toggleIn(ficha.mejoras['n'+n], k); }); }, null,
         n === 5 ? 'Si un atributo ya está en +4 o más, la mejora solo cuenta la mitad: hacen falta dos para subir 1.' : ''));
     });
@@ -2562,12 +2597,15 @@
         if(c && c.huecos.habilidad.indexOf(L) !== -1) left.push('<em>Dote de habilidad</em> ' + slotFeat('habilidad', L));
         if(!c){ left.push('<em>' + (L % 2 === 0 ? 'Dote de habilidad' : ([5,9,13,17].indexOf(L) !== -1 ? 'Dote de ascendencia' : 'Dote general')) + '</em>'); }
         if(c && c.huecos.clase.indexOf(L) !== -1) rightC.push('<em>Dote de clase</em> ' + slotFeat('clase', L));
+        if(c && isFreeArch() && L % 2 === 0) rightC.push('<em>Dote de arquetipo</em> ' + slotFeat('arquetipo', L));
         var rs = c ? c.rasgos.filter(function(r){ return r.nivel === L; }).map(function(r){ return r.nombre; }) : [];
         if(rs.length || !c) rightC.push('<em>Rasgo de clase</em> ' + E(rs.join(', ')));
         var inc = (ficha.habilidades && ficha.habilidades.incrementos || {})[L];
         if(inc && L <= lvl) rightC.push('<em>Incremento de habilidad</em> ' + E(inc));
       }
-      var boosts = MEJORA_NIVELES.indexOf(L) !== -1 ? '<span class="hj-boosts">Mejoras ' + (L <= lvl ? E((ficha.mejoras['n' + L] || []).map(function(k){ return ATR_NAME[k].slice(0,3); }).join(' ')) : '') + '</span>' : '';
+      var boosts = isGradual()
+        ? (GRADUAL_NIVELES.indexOf(L) !== -1 ? '<span class="hj-boosts">Mejora ' + (L <= lvl && gradualMap()[L] ? E(ATR_NAME[gradualMap()[L]].slice(0,3)) : '') + '</span>' : '')
+        : (MEJORA_NIVELES.indexOf(L) !== -1 ? '<span class="hj-boosts">Mejoras ' + (L <= lvl ? E((ficha.mejoras['n' + L] || []).map(function(k){ return ATR_NAME[k].slice(0,3); }).join(' ')) : '') + '</span>' : '');
       rowsL += '<div class="hj-lv' + (L <= lvl ? '' : ' future') + '"><div class="hj-lvn">' + (L === 1 ? '<small>Nivel</small>' : '') + L + '</div><div class="hj-lvl">' + left.join('<br>') + boosts + '</div><div class="hj-lvr">' + rightC.join('<br>') + '</div></div>';
     }
     var inv = [];
@@ -2698,7 +2736,8 @@
       if(!a || !t || !c) return 'todo';
       var mj = ficha.mejoras;
       var ok = mj.ancLibres.length >= ancFreeCount(a) && mj.trasfondo.length >= 2 && (claveOptions(c).length === 1 || mj.clase) && mj.n1.length >= 4;
-      MEJORA_NIVELES.forEach(function(n){ if(ficha.nivel >= n && (mj['n'+n] || []).length < 4) ok = false; });
+      if(isGradual()) GRADUAL_NIVELES.forEach(function(n){ if(ficha.nivel >= n && !gradualMap()[n]) ok = false; });
+      else MEJORA_NIVELES.forEach(function(n){ if(ficha.nivel >= n && (mj['n'+n] || []).length < 4) ok = false; });
       return ok ? 'ok' : 'part';
     }
     if(k === 'habilidades'){
@@ -2850,7 +2889,12 @@
     gb.appendChild(el('div','lv-gains', gains.map(function(g){ return '<div>' + g + '</div>'; }).join('')));
     body.appendChild(gb);
     // Mejoras de atributo
-    if(MEJORA_NIVELES.indexOf(L) !== -1){
+    if(isGradual() && GRADUAL_NIVELES.indexOf(L) !== -1){
+      var sG = section('Mejora de atributo (gradual)');
+      sG.appendChild(gradualRow(L));
+      body.appendChild(sG);
+    }
+    if(!isGradual() && MEJORA_NIVELES.indexOf(L) !== -1){
       var sel = ficha.mejoras['n' + L];
       var sM = section('Mejoras de atributo');
       sM.appendChild(boostRow('Nivel ' + L, sel, 4, function(){ return true; }, function(k){ change(function(){ toggleIn(sel, k); }); }, null,
@@ -3124,6 +3168,19 @@
         change(function(){ ficha.nivel = parseInt(v || '1', 10); });
       }));
       body.appendChild(row2);
+      var rr = el('div','ficha-grants');
+      rr.appendChild(el('div','ficha-boost-label','Reglas opcionales (GM Core)'));
+      function ruleCheck(key, label, note){
+        var lab = el('label','eq-kit-opt');
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!reglas()[key];
+        cb.addEventListener('change', function(){ change(function(){ reglas()[key] = cb.checked; }); });
+        lab.appendChild(cb);
+        lab.appendChild(el('span', null, '<b>' + label + '</b><br><small>' + note + '</small>'));
+        rr.appendChild(lab);
+      }
+      ruleCheck('arquetipoGratis', 'Arquetipo gratis', 'En el nivel 2 y en cada nivel par ganas una dote de clase extra que debe ser de arquetipo (dedicación o dote de un arquetipo cuya dedicación ya tengas).');
+      ruleCheck('mejorasGraduales', 'Mejoras de atributo graduales', 'En lugar de 4 mejoras a los niveles 5, 10, 15 y 20, ganas 1 mejora en los niveles 2, 3, 4 y 5 (y 7–10, 12–15, 17–20). Dentro de cada bloque no puedes repetir atributo.');
+      body.appendChild(rr);
     }
     else if(step.k === 'ascendencia'){
       body.appendChild(el('p','wz-p','La ascendencia es tu pueblo de origen: te da Puntos de Golpe, tamaño, velocidad, idiomas y mejoras de atributo.'));
@@ -3870,6 +3927,7 @@
       {k:'clase', t:'Dotes de ' + c.nombre.toLowerCase(), items:[]},
       {k:'habilidad', t:'Dotes de habilidad', items:[]},
       {k:'general', t:'Dotes generales', items:[]},
+      {k:'arquetipo', t:'Dotes de arquetipo (arquetipo gratis)', items:[]},
       {k:'concedida', t:'Concedidas por la clase, la subclase y el trasfondo', items:[]},
       {k:'otras', t:'Otras dotes marcadas', items:[]}
     ];
