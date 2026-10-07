@@ -1431,7 +1431,17 @@
         }
         chosen.forEach(function(en){
           var o = findBy(sub.opciones, 'en', en);
-          if(o) sC.appendChild(detailBox('<strong>' + escapeHtml(o.nombre) + '</strong><br>' + textToHtml(o.texto)));
+          if(!o) return;
+          if(o.variantes && !noSel){
+            var vk = sub.tipo + '|' + o.en, cv = chosenVariant(sub, o);
+            var vrow = el('div','ficha-slot');
+            vrow.appendChild(el('span','ficha-slot-l', escapeHtml(o.variantes.etiqueta)));
+            vrow.appendChild(makeSelect(o.variantes.opciones.map(function(x){ return {value:x.en, label:x.nombre + (x.tradicion ? ' — tradición ' + x.tradicion.toLowerCase() : '') + (x.dano ? ' — daño ' + x.dano : '')}; }), cv ? cv.en : null, 'Elige…', function(v){
+              change(function(){ ficha.variantes = ficha.variantes || {}; if(v) ficha.variantes[vk] = v; else delete ficha.variantes[vk]; });
+            }));
+            sC.appendChild(vrow);
+          }
+          sC.appendChild(detailBox('<strong>' + escapeHtml(o.nombre) + '</strong><br>' + textToHtml(o.texto)));
         });
       });
     }
@@ -1900,10 +1910,35 @@
     var n = 0; String(raw || '').replace(/\d+/g, function(x){ n += parseInt(x, 10); return x; });
     return n;
   }
+  // Variante elegida para una opción de subclase (p. ej. ejemplar dracónico del linaje dracónico)
+  function chosenVariant(sub, o){
+    if(!o || !o.variantes) return null;
+    var en = (ficha.variantes || {})[sub.tipo + '|' + o.en];
+    return en ? findBy(o.variantes.opciones, 'en', en) : null;
+  }
+  // Tradición que fija la subclase: {trad, origen} | {pendiente: etiqueta} | null
+  function subclassTradition(c){
+    if(!c) return null;
+    var res = null;
+    (c.subclases || []).forEach(function(sub){
+      (ficha.subclases[sub.tipo] || []).forEach(function(en){
+        if(res && res.trad) return;
+        var o = findBy(sub.opciones, 'en', en); if(!o) return;
+        var v = chosenVariant(sub, o);
+        if(v && v.tradicion) res = {trad: v.tradicion, origen: sub.etiqueta.toLowerCase() + ' ' + o.nombre + ' (' + v.nombre.toLowerCase() + ')'};
+        else if(o.tradicion) res = {trad: o.tradicion, origen: sub.etiqueta.toLowerCase() + ' ' + o.nombre};
+        else if(o.variantes && o.variantes.opciones.some(function(x){ return x.tradicion; })) res = {pendiente: o.variantes.etiqueta, origen: o.nombre};
+      });
+    });
+    return res;
+  }
   function casterInfo(){
     var c = fClase();
     if(!c || !c.lanzamiento || !c.tradicion || !c.tradicion.length) return null;
-    var trad = (ficha.tradicion && c.tradicion.indexOf(ficha.tradicion) !== -1) ? ficha.tradicion : (c.tradicion.length === 1 ? c.tradicion[0] : null);
+    var st = c.tradicion.length > 1 ? subclassTradition(c) : null;
+    var trad = (st && st.trad) ? st.trad
+             : (st && st.pendiente) ? null
+             : (ficha.tradicion && c.tradicion.indexOf(ficha.tradicion) !== -1) ? ficha.tradicion : (c.tradicion.length === 1 ? c.tradicion[0] : null);
     var slots = c.lanzamiento.espacios[String(ficha.nivel)] || {};
     var espontaneo = c.lanzamiento.tipo === 'espontaneo';
     var ranks = Object.keys(slots).map(Number).sort(function(a,b){ return a-b; });
@@ -1939,7 +1974,12 @@
     if(!c || !c.lanzamiento) return;
     var sS = section('Conjuros');
     var ci = casterInfo();
-    if(c.tradicion.length > 1){
+    var stI = c.tradicion.length > 1 ? subclassTradition(c) : null;
+    if(stI && stI.trad){
+      sS.appendChild(el('div','ficha-note','Tradición ' + escapeHtml(stI.trad.toLowerCase()) + ', fijada por tu ' + escapeHtml(stI.origen) + '.'));
+    } else if(stI && stI.pendiente){
+      sS.appendChild(el('div','ficha-note','Elige el ' + escapeHtml(stI.pendiente.toLowerCase()) + ' de tu ' + escapeHtml(stI.origen) + ' (en la sección Clase) para fijar la tradición.'));
+    } else if(c.tradicion.length > 1){
       var row = el('div','ficha-slot');
       row.appendChild(el('span','ficha-slot-l','Tradición'));
       row.appendChild(makeSelect(c.tradicion.map(function(t){ return {value:t, label:t}; }), ci && ci.trad, 'Elige tradición…', function(v){ change(function(){ ficha.tradicion = v; }); }));
@@ -2138,6 +2178,8 @@
       (ficha.subclases[sub.tipo] || []).forEach(function(en){
         var o = findBy(sub.opciones, 'en', en);
         if(o) (o.concede || []).forEach(function(g){ out.push({g: g, origen: sub.etiqueta + ' ' + o.nombre}); });
+        var vv = chosenVariant(sub, o);
+        if(vv) (vv.concede || []).forEach(function(g){ out.push({g: g, origen: o.nombre + ' ' + vv.nombre.toLowerCase()}); });
       });
     });
     var ci = casterInfo();
@@ -2461,7 +2503,9 @@
     if(k === 'clase'){
       if(!c) return 'todo';
       var missingSub = c.subclases.some(function(sb){ return (ficha.subclases[sb.tipo] || []).length < sb.elegir; });
-      var needTrad = c.lanzamiento && c.tradicion.length > 1 && !ficha.tradicion;
+      var ciS = casterInfo();
+      var needTrad = c.lanzamiento && c.tradicion.length > 1 && !(ciS && ciS.trad);
+      c.subclases.forEach(function(sb){ (ficha.subclases[sb.tipo] || []).forEach(function(en){ var o = findBy(sb.opciones,'en',en); if(o && o.variantes && !chosenVariant(sb, o)) missingSub = true; }); });
       return (missingSub || needTrad) ? 'part' : 'ok';
     }
     if(k === 'atributos'){
@@ -2807,10 +2851,30 @@
             });
           }, {allowNone: sub.elegir <= 1});
         });
+        // Variantes de la subclase elegida (ejemplar dracónico, tipo elemental…)
+        c.subclases.forEach(function(sub){
+          (ficha.subclases[sub.tipo] || []).forEach(function(en){
+            var o = findBy(sub.opciones, 'en', en);
+            if(!o || !o.variantes) return;
+            var vk = sub.tipo + '|' + o.en, cv = chosenVariant(sub, o);
+            body.appendChild(el('div','ficha-boost-label', escapeHtml(o.variantes.etiqueta) + ' <em>(' + escapeHtml(o.nombre) + ')</em>'));
+            cardPicker(body, 'var-' + vk, o.variantes.opciones.map(function(x){
+              var meta = [x.tradicion ? 'Tradición ' + x.tradicion.toLowerCase() : '', x.habilidad ? 'Habilidad: ' + x.habilidad : '', x.dano ? 'Daño ' + x.dano : ''].filter(Boolean).join(' · ');
+              var sp = (x.concede || []).map(function(g){ return (g.rango === 0 ? 'truco' : g.rango + '.º') + ' ' + g.nombre; }).join(', ');
+              return {value:x.en, label:x.nombre, meta: meta, sub: sp ? 'Conjuros: ' + sp : ''};
+            }), cv ? cv.en : null, function(v){ change(function(){ ficha.variantes = ficha.variantes || {}; ficha.variantes[vk] = v; }); });
+          });
+        });
         if(c.lanzamiento && c.tradicion.length > 1){
+          var stW = subclassTradition(c);
           body.appendChild(el('div','ficha-boost-label','Tradición mágica'));
-          var ci0 = casterInfo();
-          cardPicker(body, 'trad', c.tradicion.map(function(tr){ return {value:tr, label:tr}; }), ci0 && ci0.trad, function(v){ change(function(){ ficha.tradicion = v; }); });
+          if(stW && stW.trad) body.appendChild(el('div','ficha-grants','Tradición <b>' + escapeHtml(stW.trad.toLowerCase()) + '</b>, fijada por tu ' + escapeHtml(stW.origen) + '.'));
+          else if(stW && stW.pendiente) body.appendChild(el('div','ficha-note','La tradición la fija el ' + escapeHtml(stW.pendiente.toLowerCase()) + ' que elijas arriba.'));
+          else if(!(ficha.subclases[(c.subclases[0] || {}).tipo] || []).length && c.subclases.length) body.appendChild(el('div','ficha-note','Elige primero tu ' + escapeHtml(c.subclases[0].etiqueta.toLowerCase()) + ': de ella depende la tradición.'));
+          else {
+            var ci0 = casterInfo();
+            cardPicker(body, 'trad', c.tradicion.map(function(tr){ return {value:tr, label:tr}; }), ci0 && ci0.trad, function(v){ change(function(){ ficha.tradicion = v; }); });
+          }
         }
         renderFicha({container: body, only: ['claseInfo']});
       }
