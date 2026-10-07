@@ -31,7 +31,7 @@ Ghoran            ->  ghoran   (raro)
 Gnomo             ->  gnomo
 Goblin            ->  goblin
 Goloma            ->  goloma   (raro)
-Halfling          ->  halfling
+Mediano           ->  mediano
 Hobgoblin         ->  hobgoblin   (poco común)
 Hombresaurio      ->  hombresaurio   (poco común)
 Humano            ->  humano
