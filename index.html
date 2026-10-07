@@ -437,6 +437,12 @@
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .cp-block{border:1px solid rgba(51,38,25,0.18); border-radius:8px; padding:10px 12px; margin:8px 0; background:rgba(255,255,255,0.35); line-height:1.5;}
+  .cp-h{font-size:18px; font-weight:700; color:var(--accent); margin-bottom:4px;} .cp-h small{font-weight:400; color:var(--ink-soft); font-size:13px;}
+  .cp-mods, .cp-stats{display:flex; flex-wrap:wrap; gap:4px 14px; margin:2px 0 4px;}
+  .cp-block small{color:var(--ink-soft);}
+  #printSheet .hj-comp .cp-block{border:1.5px solid #999; border-radius:2mm; padding:3mm; margin:0 0 4mm; font-size:9.5pt; background:none; color:#000;}
+  #printSheet .hj-comp .cp-h{color:#000; font-size:12pt;} #printSheet .hj-comp small{color:#444;}
   .wz-spell-g{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); padding:8px 8px 2px;}
   .cv-list{max-height:none; overflow:visible;}
   .cv-actions{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px;}
@@ -1571,6 +1577,7 @@
     if(want('equipo')) renderEquipoSection(main);
     if(want('conjuros')) renderConjurosSection(main);
     if(want('foco')) renderFocoSection(main);
+    if(want('companeros')) renderCompanerosSection(main, false);
 
     // ---- Resumen ----
     if(want('resumen') && a && c){
@@ -2673,7 +2680,16 @@
         '</div></div>';
       p4 += '<div class="hj-foot"><span>Página cuatro — Conjuros</span><span></span></div>';
     }
-    return '<div class="hj-page">' + p1 + '</div><div class="hj-page">' + p2 + '</div><div class="hj-page">' + p3 + '</div>' + (p4 ? '<div class="hj-page">' + p4 + '</div>' : '');
+    var p5 = '';
+    var cinf = companionInfo(), blocks = [];
+    if(cinf.eidolon){ var ek5 = eidolonCalc(); if(ek5) blocks.push(eidolonBlockHtml(ek5)); }
+    if(cinf.animal){ var ak5 = animalCalc(); if(ak5) blocks.push(animalBlockHtml(ak5)); }
+    if(cinf.familiar) blocks.push(familiarBlockHtml());
+    if(blocks.length){
+      p5 = title('Compañeros') + '<div class="hj-comp">' + blocks.join('') + '</div>' +
+        '<div class="hj-foot"><span>Página ' + (p4 ? 'cinco' : 'cuatro') + ' — Compañeros</span><span></span></div>';
+    }
+    return '<div class="hj-page">' + p1 + '</div><div class="hj-page">' + p2 + '</div><div class="hj-page">' + p3 + '</div>' + (p4 ? '<div class="hj-page">' + p4 + '</div>' : '') + (p5 ? '<div class="hj-page">' + p5 + '</div>' : '');
   }
   function printFicha(){
     var el = document.getElementById('printSheet');
@@ -2708,6 +2724,7 @@
     {k:'habilidades', t:'Habilidades', icon:'H'},
     {k:'dotes', t:'Dotes', icon:'D'},
     {k:'conjuros', t:'Conjuros', icon:'✦', when: hasSpellStep},
+    {k:'companeros', t:'Compañeros', icon:'🐾', when: hasCompanionStep},
     {k:'equipo', t:'Equipo', icon:'⚔'},
     {k:'resumen', t:'Resumen', icon:'✓'}
   ];
@@ -2762,6 +2779,13 @@
       var mk = markedSpellsByRank(ci);
       var full = ci.ranks.every(function(r){ return (mk.by[r] || []).length >= slotNum(ci.slots[r]); });
       return full ? 'ok' : 'part';
+    }
+    if(k === 'companeros'){
+      var ci2 = companionInfo(), cs = compState();
+      if(ci2.animal && !cs.animal.tipo) return 'part';
+      if(ci2.animal && animalStage() >= 2 && !cs.animal.avanzado) return 'part';
+      if(ci2.familiar && !cs.familiar.aptitudes.length) return 'part';
+      return 'ok';
     }
     if(k === 'equipo'){ var e = eqState(); return (e.armadura || e.armas.length) ? 'ok' : 'todo'; }
     return 'ok';
@@ -2833,6 +2857,316 @@
   }
   function goTab(tab){ var b = document.querySelector('#mainTabs [data-tab="' + tab + '"]'); if(b) b.click(); }
   function openWizard(step){ wizStep = step; render(); window.scrollTo(0, 0); }
+
+  // ---- Compañeros: compañero animal, familiar y eidolon ----
+  function compData(){ return (BASE && BASE.companeros) || {animales:[], familiar:[], especializaciones:[], avanzados:[], eidolones:[]}; }
+  function compState(){
+    if(!ficha.companeros || typeof ficha.companeros !== 'object') ficha.companeros = {};
+    var s = ficha.companeros;
+    if(!s.animal) s.animal = {tipo:null, nombre:'', etapa:'auto', avanzado:null, especializaciones:[]};
+    if(!Array.isArray(s.animal.especializaciones)) s.animal.especializaciones = [];
+    if(!s.familiar) s.familiar = {nombre:'', aptitudes:[], extra:0, activo:false};
+    if(!Array.isArray(s.familiar.aptitudes)) s.familiar.aptitudes = [];
+    if(!s.eidolon) s.eidolon = {nombre:'', array:0};
+    return s;
+  }
+  // Nombres de todas las dotes del personaje (huecos, concedidas y marcadas)
+  function myFeatNames(){
+    var out = [], byId = {};
+    FEATS.forEach(function(f){ byId[String(f.id)] = f; });
+    Object.keys(ficha.dotes || {}).forEach(function(k){ var d = ficha.dotes[k]; if(d){ var lv = parseInt(k.split('-')[1], 10) || 1; if(lv <= ficha.nivel) out.push((byId[String(d.id)] || {}).name || d.nombre || ''); } });
+    ((ficha.auto && ficha.auto.dotes) || []).forEach(function(id){ if(byId[id]) out.push(byId[id].name); });
+    Object.keys(chosenFeats || {}).forEach(function(id){ if(chosenFeats[id] && byId[id]) out.push(byId[id].name); });
+    return out;
+  }
+  function hasFeat(re){ return myFeatNames().some(function(n){ return re.test(n); }); }
+  function hasSubOption(en){ return Object.keys(ficha.subclases || {}).some(function(k){ return (ficha.subclases[k] || []).indexOf(en) !== -1; }); }
+  function animalAccess(){ return hasFeat(/^Compañero animal(?! maduro)/i) || hasFeat(/^Dedicación de (adiestrador de animales|jinete|caballero|domador)/i); }
+  function familiarAccess(){
+    var c = fClase();
+    return !!(c && c.id === 'Witch') || hasSubOption('Improved Familiar Attunement') || hasFeat(/^Familiar( \(|$)/) || hasFeat(/^Familiar de /) || hasFeat(/^Dedicación de maestro de familiares/i);
+  }
+  function eidolonAccess(){ var c = fClase(); return !!(c && c.id === 'Summoner'); }
+  function companionInfo(){
+    var s = compState();
+    return {animal: animalAccess() || !!s.animal.tipo, familiar: familiarAccess() || !!s.familiar.activo || s.familiar.aptitudes.length > 0, eidolon: eidolonAccess()};
+  }
+  function hasCompanionStep(){ var i = companionInfo(); return i.animal || i.familiar || i.eidolon; }
+
+  // --- Compañero animal ---
+  var STAGE_LABEL = ['Joven', 'Maduro', 'Increíble', 'Especializado'];
+  function animalStageAuto(){
+    if(hasFeat(/^Compañero especializado/i)) return 3;
+    if(hasFeat(/^Compañero increíble/i)) return 2;
+    if(hasFeat(/^Compañero animal maduro|^Compañero maduro/i)) return 1;
+    return 0;
+  }
+  function animalStage(){ var e = compState().animal.etapa; return e === 'auto' || e === undefined || e === null ? animalStageAuto() : parseInt(e, 10); }
+  var ADV_MODS = {Nimble:{des:2, fue:1, con:1, sab:1, dmg:2, skill:'Acrobacias'}, Savage:{fue:2, des:1, con:1, sab:1, dmg:3, skill:'Atletismo', grow:true},
+                  Indomitable:{con:2, fue:1, des:1, sab:1, dmg:3, skill:'Atletismo', grow:true}, Unseen:{sab:2, fue:1, des:1, con:1, dmg:3, skill:'Sigilo'},
+                  'Genie-Touched':{sab:2, fue:1, des:1, con:1, dmg:3}};
+  var SIZES = ['Diminuto','Pequeño','Mediano','Grande','Enorme'];
+  function growSize(sz){ var i = SIZES.indexOf(sz); return i !== -1 && i < 2 ? SIZES[i + 1] : (i === 2 ? 'Grande' : sz); }
+  function animalCalc(){
+    var s = compState().animal, t = findBy(compData().animales, 'id', s.tipo);
+    if(!t) return null;
+    var L = ficha.nivel, st = animalStage();
+    var mods = {}; Object.keys(t.mods).forEach(function(k){ mods[k] = t.mods[k]; });
+    var size = t.tamano, extra = 0;
+    var ranks = {per:1, fort:1, ref:1, vol:1, atk:1, def:1};
+    var skills = {'Acrobacias':1, 'Atletismo':1};
+    if(t.habilidad) skills[t.habilidad] = 1;
+    if(st >= 1){
+      ['fue','des','con','sab'].forEach(function(k){ mods[k] += 1; });
+      ranks.per = ranks.fort = ranks.ref = ranks.vol = 2;
+      ['Intimidación','Sigilo','Supervivencia'].forEach(function(n){ skills[n] = (t.habilidad === n) ? 2 : Math.max(skills[n] || 0, 1); });
+      if(size === 'Pequeño' || size === 'Diminuto') size = 'Mediano';
+    }
+    var adv = st >= 2 && s.avanzado ? ADV_MODS[s.avanzado] : null;
+    if(adv){
+      ['fue','des','con','sab'].forEach(function(k){ mods[k] += adv[k] || 0; });
+      extra = adv.dmg; if(adv.skill) skills[adv.skill] = Math.max(skills[adv.skill] || 0, 2);
+      if(adv.grow && SIZES.indexOf(size) <= 2) size = growSize(size);
+    }
+    function prof(r){ return r ? 2 * r + L : 0; }
+    var hp = t.pg + (6 + mods.con) * L;
+    var atks = t.ataques.map(function(a){
+      var fin = a.rasgosEn.indexOf('finesse') !== -1, agi = a.rasgosEn.indexOf('agile') !== -1;
+      var atk = (fin ? Math.max(mods.fue, mods.des) : mods.fue) + prof(ranks.atk);
+      var dice = (st >= 1 ? 2 : 1) + a.dado.replace(/^\d+/, '');
+      var bonus = mods.fue + extra;
+      return {nombre: a.nombre, rasgos: a.rasgos, atk: atk, map: agi ? [4, 8] : [5, 10], dmg: dice + (bonus ? (bonus > 0 ? ' + ' : ' − ') + Math.abs(bonus) : '') + ' ' + a.tipo};
+    });
+    return {t: t, st: st, mods: mods, size: size, hp: hp, ac: 10 + mods.des + prof(ranks.def),
+            per: mods.sab + prof(ranks.per), fort: mods.con + prof(ranks.fort), ref: mods.des + prof(ranks.ref), vol: mods.sab + prof(ranks.vol),
+            ranks: ranks, skills: Object.keys(skills).sort().map(function(n){ var a = skillAttr(n); return {n: n, r: skills[n], v: (a ? mods[a] : 0) + prof(skills[n])}; }),
+            atks: atks, adv: s.avanzado ? findBy(compData().avanzados, 'id', s.avanzado) : null};
+  }
+  // --- Familiar ---
+  function familiarSlots(){
+    var c = fClase(), L = ficha.nivel, n = 2, notes = ['2 aptitudes base'];
+    if(hasFeat(/^Familiar mejorado$/i)){ n += 2; notes.push('+2 por Familiar mejorado'); }
+    var lvExtra = [6, 12, 18].filter(function(x){ return L >= x; }).length;
+    if(c && c.id === 'Witch'){ n += 1 + lvExtra; notes.push('+' + (1 + lvExtra) + ' de bruja (más la aptitud fija de tu patrón)'); }
+    if(hasSubOption('Improved Familiar Attunement')){ n += 1 + lvExtra; notes.push('+' + (1 + lvExtra) + ' por Sintonía mejorada con el familiar'); }
+    var ex = compState().familiar.extra || 0;
+    if(ex) notes.push((ex > 0 ? '+' : '') + ex + ' a mano');
+    return {n: n + ex, notes: notes};
+  }
+  function familiarCalc(){
+    var c = fClase(), mod = computeAttrs().mod, L = ficha.nivel;
+    var clave = c ? (claveOptions(c).length === 1 ? claveOptions(c)[0] : ficha.mejoras.clase) : null;
+    var attr = (c && c.lanzamiento && clave) ? clave : 'car';
+    var ai = armorInfo(mod);
+    function sv(stat, k){ return mod[k] + profBonus(rankAt(c, stat)); }
+    return {hp: 5 * L, attr: attr, skill: L + mod[attr], ac: ai.ac, fort: sv('fort','con'), ref: sv('ref','des'), vol: sv('vol','sab'), other: L};
+  }
+  // --- Eidolon ---
+  function eidolonType(){
+    var en = ((ficha.subclases || {}).eidolon || [])[0];
+    return en ? findBy(compData().eidolones, 'id', en) : null;
+  }
+  function eidolonCalc(){
+    var e = eidolonType(), c = fClase();
+    if(!e || !c) return null;
+    var L = ficha.nivel, arr = e.arrays[compState().eidolon.array || 0] || e.arrays[0];
+    if(!arr) return null;
+    var mods = {}; Object.keys(arr.mods).forEach(function(k){ mods[k] = arr.mods[k]; });
+    var rAtk = L >= 13 ? 3 : (L >= 5 ? 2 : 1), rDef = L >= 19 ? 3 : (L >= 11 ? 2 : 1);
+    function prof(r){ return r ? 2 * r + L : 0; }
+    var spec = L >= 15 ? [0, 0, 4, 6, 8][rAtk] : (L >= 7 ? [0, 0, 2, 3, 4][rAtk] : 0);
+    var mod = computeAttrs().mod;
+    var hpOwner = ((fAsc() || {}).pg || 0) + (c.pg + mod.con) * L;
+    function atk(name, die, fin, agile){
+      var a = (fin ? Math.max(mods.fue, mods.des) : mods.fue) + prof(rAtk);
+      var b = mods.fue + spec;
+      return {nombre: name, atk: a, map: agile ? [4, 8] : [5, 10], dmg: '1' + die + (b ? (b > 0 ? ' + ' : ' − ') + Math.abs(b) : ''), rasgos: agile ? ['Ágil', 'Sutil'] : []};
+    }
+    return {e: e, arr: arr, mods: mods, hp: hpOwner, ac: 10 + Math.min(mods.des, arr.limDes) + arr.ca + prof(rDef),
+            per: mods.sab + profBonus(rankAt(c, 'per')), fort: mods.con + profBonus(rankAt(c, 'fort')), ref: mods.des + profBonus(rankAt(c, 'ref')), vol: mods.sab + profBonus(rankAt(c, 'vol')),
+            rAtk: rAtk, rDef: rDef, atks: [atk('Ataque primario', 'd8', false, false), atk('Ataque secundario', 'd6', true, true)],
+            aptitudes: e.aptitudes.filter(function(a){ return a.nivel <= L; }), futuras: e.aptitudes.filter(function(a){ return a.nivel > L; })};
+  }
+  function eidolonName(e){
+    var c = fClase(), sub = c && findBy(c.subclases, 'tipo', 'eidolon');
+    var o = sub ? findBy(sub.opciones, 'en', e.id) : null;
+    return o ? o.nombre : e.id;
+  }
+
+  // Bloque de estadísticas (HTML) — se usa en el creador, la ficha y la hoja impresa
+  function modsHtml(m){ return ATRS.map(function(a){ return '<span><b>' + a.c + '</b> ' + fmtMod(m[a.k]) + '</span>'; }).join(' '); }
+  function atkHtml(a){ return '<div><b>' + escapeHtml(a.nombre) + '</b> ' + fmtMod(a.atk) + ' <small>(' + fmtMod(a.atk - a.map[0]) + '/' + fmtMod(a.atk - a.map[1]) + ')</small>' + (a.rasgos && a.rasgos.length ? ' <small>(' + escapeHtml(a.rasgos.join(', ')) + ')</small>' : '') + ', <b>Daño</b> ' + escapeHtml(a.dmg) + '</div>'; }
+  function animalBlockHtml(k){
+    var s = compState().animal;
+    return '<div class="cp-block"><div class="cp-h">' + escapeHtml(s.nombre || k.t.nombre) + ' <small>' + escapeHtml(k.t.nombre) + ' · compañero ' + STAGE_LABEL[k.st].toLowerCase() + (k.adv ? ' (' + escapeHtml(k.adv.nombre.toLowerCase()) + ')' : '') + ' · nivel ' + ficha.nivel + ' · ' + escapeHtml(k.size) + '</small></div>' +
+      '<div class="cp-mods">' + modsHtml(k.mods) + '</div>' +
+      '<div class="cp-stats"><span><b>PG</b> ' + k.hp + '</span><span><b>CA</b> ' + k.ac + '</span><span><b>Fort</b> ' + fmtMod(k.fort) + '</span><span><b>Ref</b> ' + fmtMod(k.ref) + '</span><span><b>Vol</b> ' + fmtMod(k.vol) + '</span><span><b>Percepción</b> ' + fmtMod(k.per) + '</span></div>' +
+      '<div><b>Velocidad</b> ' + escapeHtml(k.t.velocidad) + ' · <b>Sentidos</b> ' + escapeHtml(k.t.sentidos) + '</div>' +
+      '<div><b>Habilidades</b> ' + k.skills.map(function(x){ return escapeHtml(x.n) + ' ' + fmtMod(x.v); }).join(', ') + '</div>' +
+      k.atks.map(atkHtml).join('') +
+      (k.t.especial && k.t.especial !== 'montura' ? '<div><b>Especial</b> ' + escapeHtml(k.t.especial) + '</div>' : '') +
+      (k.t.montura ? '<div><small>Puede servir de montura.</small></div>' : '') +
+      '<div><b>Beneficio de apoyo</b> ' + escapeHtml(k.t.apoyo) + '</div>' +
+      '<div><b>Maniobra avanzada</b> ' + escapeHtml(k.t.maniobra) + (k.st >= 2 ? '' : ' <small>(la aprende al ser ágil o salvaje)</small>') + '</div>' +
+      (s.especializaciones.length ? '<div><b>Especializaciones</b> ' + s.especializaciones.map(function(id){ var x = findBy(compData().especializaciones, 'id', id); return x ? escapeHtml(x.nombre) : id; }).join(', ') + '</div>' : '') +
+      '</div>';
+  }
+  function familiarBlockHtml(){
+    var s = compState().familiar, f = familiarCalc(), sl = familiarSlots();
+    var ab = s.aptitudes.map(function(id){ return findBy(compData().familiar, 'id', id); }).filter(Boolean);
+    return '<div class="cp-block"><div class="cp-h">' + escapeHtml(s.nombre || 'Familiar') + ' <small>familiar · nivel ' + ficha.nivel + ' · Diminuto</small></div>' +
+      '<div class="cp-stats"><span><b>PG</b> ' + f.hp + '</span><span><b>CA</b> ' + f.ac + '</span><span><b>Fort</b> ' + fmtMod(f.fort) + '</span><span><b>Ref</b> ' + fmtMod(f.ref) + '</span><span><b>Vol</b> ' + fmtMod(f.vol) + '</span>' +
+      '<span><b>Percepción, Acrobacias, Sigilo</b> ' + fmtMod(f.skill) + '</span><span><b>Otras habilidades</b> ' + fmtMod(f.other) + '</span></div>' +
+      '<div><small>Usa tu CA y tus salvaciones; Percepción, Acrobacias y Sigilo = tu nivel + ' + ATR_NAME[f.attr] + '. Velocidad 25 pies (salvo aptitudes).</small></div>' +
+      '<div><b>Aptitudes (' + ab.length + '/' + sl.n + ')</b> ' + (ab.length ? ab.map(function(a){ return escapeHtml(a.nombre) + (a.tipo === 'amo' ? ' <small>(de amo)</small>' : ''); }).join(', ') : '—') + '</div></div>';
+  }
+  function eidolonBlockHtml(k){
+    var s = compState().eidolon;
+    return '<div class="cp-block"><div class="cp-h">' + escapeHtml(s.nombre || eidolonName(k.e)) + ' <small>eidolon ' + escapeHtml(eidolonName(k.e).toLowerCase()) + ' · ' + escapeHtml(k.arr.nombre.toLowerCase()) + ' · ' + escapeHtml(k.e.tamano.join(' o ')) + '</small></div>' +
+      '<div class="cp-mods">' + modsHtml(k.mods) + '</div>' +
+      '<div class="cp-stats"><span><b>PG</b> ' + k.hp + ' <small>(compartidos contigo)</small></span><span><b>CA</b> ' + k.ac + '</span><span><b>Fort</b> ' + fmtMod(k.fort) + '</span><span><b>Ref</b> ' + fmtMod(k.ref) + '</span><span><b>Vol</b> ' + fmtMod(k.vol) + '</span><span><b>Percepción</b> ' + fmtMod(k.per) + '</span></div>' +
+      '<div><b>Velocidad</b> ' + escapeHtml(k.e.velocidad) + (k.e.sentidos ? ' · <b>Sentidos</b> ' + escapeHtml(k.e.sentidos) : '') + (k.e.idioma ? ' · <b>Idioma</b> ' + escapeHtml(k.e.idioma) : '') + '</div>' +
+      (k.e.habilidades ? '<div><b>Habilidades</b> ' + escapeHtml(k.e.habilidades) + '</div>' : '') +
+      k.atks.map(atkHtml).join('') +
+      '<div><small>Ataques sugeridos: ' + escapeHtml(k.e.ataques) + '. Competencia sin armas: ' + PROF_LABEL[k.rAtk].toLowerCase() + '; defensa sin armadura: ' + PROF_LABEL[k.rDef].toLowerCase() + '.</small></div>' +
+      '<div><b>Aptitudes</b> ' + k.aptitudes.map(function(a){ return escapeHtml(a.nombre) + ' <small>(' + a.nivel + ')</small>'; }).join(', ') + (k.futuras.length ? ' <small>· más adelante: ' + k.futuras.map(function(a){ return escapeHtml(a.nombre) + ' (' + a.nivel + ')'; }).join(', ') + '</small>' : '') + '</div>' +
+      '</div>';
+  }
+  // Sección de compañeros (solo lectura): ficha y resumen
+  function renderCompanerosSection(main, editable){
+    var info = companionInfo(), s = compState();
+    if(!info.animal && !info.familiar && !info.eidolon) return;
+    var sec = section('Compañeros');
+    var any = false;
+    if(info.eidolon){ var ek = eidolonCalc(); if(ek){ sec.appendChild(el('div', null, eidolonBlockHtml(ek))); any = true; } }
+    if(info.animal){ var ak = animalCalc(); if(ak){ sec.appendChild(el('div', null, animalBlockHtml(ak))); any = true; } else sec.appendChild(el('div','ficha-note','Tienes un compañero animal, pero aún no has elegido su tipo.')); }
+    if(info.familiar){ sec.appendChild(el('div', null, familiarBlockHtml())); any = true; }
+    if(editable === false && !any) return;
+    main.appendChild(sec);
+  }
+  // Paso del creador
+  function renderCompanerosStep(body){
+    var info = companionInfo(), s = compState(), D = compData();
+    body.appendChild(el('p','wz-p','Tu compañero sube de nivel contigo. Las estadísticas se calculan solas según tu nivel y tus dotes (Compañero animal maduro, Compañero increíble, Familiar mejorado…).'));
+    function nameRow(parent, obj, ph){
+      var row = el('div','ficha-slot');
+      row.appendChild(el('span','ficha-slot-l','Nombre'));
+      var inp = document.createElement('input'); inp.className = 'ficha-select'; inp.placeholder = ph; inp.value = obj.nombre || '';
+      inp.addEventListener('change', function(){ obj.nombre = inp.value.trim(); saveFicha(); render(); });
+      row.appendChild(inp); parent.appendChild(row);
+    }
+    // Eidolon
+    if(info.eidolon){
+      var sE = section('Eidolon');
+      var e = eidolonType();
+      if(!e){ sE.appendChild(el('div','ficha-note','Elige primero el tipo de eidolon en el paso «Clase».')); }
+      else {
+        nameRow(sE, s.eidolon, eidolonName(e));
+        sE.appendChild(el('div','ficha-boost-label','Reparto de atributos'));
+        var g = el('div','wz-cards');
+        e.arrays.forEach(function(a, i){
+          var on = (s.eidolon.array || 0) === i;
+          var cd = el('button','wz-card' + (on ? ' on' : ''), '<span class="wz-card-n">' + escapeHtml(a.nombre) + '</span><span class="wz-card-m">' + modsHtml(a.mods) + '</span><span class="wz-card-s">+' + a.ca + ' CA (límite de Des +' + a.limDes + ')</span>');
+          cd.addEventListener('click', function(){ change(function(){ s.eidolon.array = i; }); });
+          g.appendChild(cd);
+        });
+        sE.appendChild(g);
+        var ek = eidolonCalc();
+        if(ek) sE.appendChild(el('div', null, eidolonBlockHtml(ek)));
+        e.aptitudes.forEach(function(a){
+          var d = el('details','ficha-rasgo');
+          d.innerHTML = '<summary>' + escapeHtml(a.nombre) + ' <small>(nivel ' + a.nivel + ')</small></summary><div>' + textToHtml(a.texto) + '</div>';
+          sE.appendChild(d);
+        });
+      }
+      body.appendChild(sE);
+    }
+    // Compañero animal
+    var sA = section('Compañero animal');
+    if(!info.animal){
+      sA.appendChild(el('div','ficha-note','No tienes ninguna dote que te dé un compañero animal (por ejemplo «Compañero animal» del druida o el explorador). Si lo tienes por otra vía, elige su tipo aquí.'));
+    }
+    var a = s.animal;
+    if(!info.animal || a._open){
+      var tog = el('button','wz-btn small', (a.tipo || a._open) ? 'Quitar compañero animal' : 'Tengo un compañero animal');
+      tog.addEventListener('click', function(){ change(function(){ if(a.tipo || a._open){ a.tipo = null; a._open = false; a.avanzado = null; a.especializaciones = []; } else a._open = true; }); });
+      if(!info.animal || a._open) sA.appendChild(tog);
+    }
+    if(info.animal || a.tipo || a._open){
+      nameRow(sA, a, 'Nombre de tu compañero');
+      cardPicker(sA, 'animal', D.animales.map(function(t){
+        return {value: t.id, label: t.nombre, rareza: t.rareza, meta: t.tamano + ' · ' + t.ataques.map(function(x){ return x.nombre + ' ' + x.dado; }).join(', ') + (t.montura ? ' · montura' : ''), sub: t.desc + ' ' + t.velocidad};
+      }), a.tipo, function(v){ change(function(){ a.tipo = v; }); }, {placeholder: 'Buscar animal…'});
+      if(a.tipo){
+        var auto = animalStageAuto();
+        var row = el('div','ficha-slot');
+        row.appendChild(el('span','ficha-slot-l','Etapa'));
+        row.appendChild(makeSelect([{value:'auto', label:'Automática según tus dotes (' + STAGE_LABEL[auto].toLowerCase() + ')'}].concat(STAGE_LABEL.map(function(l, i){ return {value:String(i), label:l}; })),
+          String(a.etapa === undefined || a.etapa === null ? 'auto' : a.etapa), 'Etapa', function(v){ change(function(){ a.etapa = v || 'auto'; }); }));
+        sA.appendChild(row);
+        var st = animalStage();
+        if(st >= 2){
+          var r2 = el('div','ficha-slot');
+          r2.appendChild(el('span','ficha-slot-l','Compañero increíble'));
+          r2.appendChild(makeSelect(D.avanzados.map(function(x){ return {value:x.id, label:x.nombre}; }), a.avanzado, 'Elige ágil o salvaje…', function(v){ change(function(){ a.avanzado = v; }); }));
+          sA.appendChild(r2);
+          var adv = findBy(D.avanzados, 'id', a.avanzado);
+          if(adv) sA.appendChild(detailBox(textToHtml(adv.texto)));
+        }
+        if(st >= 3){
+          var nSpec = Math.max(1, myFeatNames().filter(function(n){ return /^Compañero especializado/i.test(n); }).length);
+          var box = el('div','ficha-multi');
+          box.appendChild(el('div','ficha-boost-label','Especializaciones <em>(' + a.especializaciones.length + '/' + nSpec + ')</em>'));
+          D.especializaciones.forEach(function(x){
+            var lab = el('label','ficha-check');
+            var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = a.especializaciones.indexOf(x.id) !== -1;
+            if(!cb.checked && a.especializaciones.length >= nSpec) cb.disabled = true;
+            cb.addEventListener('change', function(){ change(function(){ toggleIn(a.especializaciones, x.id); }); });
+            lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + x.nombre));
+            lab.title = x.texto;
+            box.appendChild(lab);
+          });
+          sA.appendChild(box);
+        }
+        var ak = animalCalc();
+        if(ak) sA.appendChild(el('div', null, animalBlockHtml(ak)));
+        sA.appendChild(el('div','ficha-note','Joven: entrenado en todo. Maduro: +1 a Fue, Des, Con y Sab, 2 dados de daño, Percepción y salvaciones expertas. Ágil/salvaje: según la opción. Las especializaciones se muestran pero sus cambios numéricos no se aplican solos.'));
+      }
+    }
+    body.appendChild(sA);
+    // Familiar
+    var sF = section('Familiar');
+    var fm = s.familiar;
+    if(!info.familiar){
+      sF.appendChild(el('div','ficha-note','No tienes ninguna dote ni rasgo que te dé un familiar (la bruja lo tiene siempre; los demás, con la dote «Familiar»).'));
+      var tf = el('button','wz-btn small','Tengo un familiar');
+      tf.addEventListener('click', function(){ change(function(){ fm.activo = true; }); });
+      sF.appendChild(tf);
+    } else {
+      if(fm.activo && !familiarAccess()){ var qf = el('button','wz-btn small','Quitar familiar'); qf.addEventListener('click', function(){ change(function(){ fm.activo = false; fm.aptitudes = []; }); }); sF.appendChild(qf); }
+      nameRow(sF, fm, 'Nombre de tu familiar');
+      var sl = familiarSlots();
+      var row3 = el('div','ficha-slot');
+      row3.appendChild(el('span','ficha-slot-l','Aptitudes al día'));
+      row3.appendChild(el('span', null, '<b>' + sl.n + '</b> <small>(' + escapeHtml(sl.notes.join(', ')) + ')</small> '));
+      var ex = document.createElement('input'); ex.type = 'number'; ex.className = 'eq-qty'; ex.value = String(fm.extra || 0); ex.title = 'Ajuste manual';
+      ex.addEventListener('change', function(){ var v = parseInt(ex.value, 10); change(function(){ fm.extra = isNaN(v) ? 0 : v; }); });
+      row3.appendChild(ex);
+      sF.appendChild(row3);
+      sF.appendChild(el('div','ficha-note','Puedes cambiar las aptitudes cada día durante tus preparativos. El número junto a la cantidad es un ajuste manual (por ejemplo, por otras dotes).'));
+      var list = el('div','wz-spells');
+      var lastT = null;
+      D.familiar.slice().sort(function(x, y){ return (x.tipo === y.tipo ? 0 : (x.tipo === 'familiar' ? -1 : 1)) || x.nombre.localeCompare(y.nombre, 'es'); }).forEach(function(x){
+        if(x.tipo !== lastT){ lastT = x.tipo; list.appendChild(el('div','wz-spell-g', x.tipo === 'familiar' ? 'Aptitudes de familiar' : 'Aptitudes de amo')); }
+        var on = fm.aptitudes.indexOf(x.id) !== -1;
+        var it = {id: 'fam-' + x.id, name: x.nombre, desc: shortText(x.texto, 140), rarity: x.rareza};
+        spellRow(list, it, on, function(){ change(function(){ toggleIn(fm.aptitudes, x.id); }); }, [], function(){ return textToHtml(x.texto); });
+      });
+      sF.appendChild(list);
+      sF.appendChild(el('div', null, familiarBlockHtml()));
+    }
+    body.appendChild(sF);
+  }
 
   // ---- Subir de nivel ----
   function goWizard(step){ wizStep = step; goTab('inicio'); window.scrollTo(0, 0); }
@@ -2910,6 +3244,12 @@
       renderSpellPicker(body);
     }
     if(focusInfo().fc){ renderFicha({container: body, only: ['foco']}); renderFocusPicker(body); }
+    if(hasCompanionStep()){
+      renderFicha({container: body, only: ['companeros']});
+      var cbtn = el('button','wz-btn small','🐾 Ajustar compañeros (etapa, aptitudes…)');
+      cbtn.addEventListener('click', function(){ openWizard('companeros'); });
+      body.appendChild(cbtn);
+    }
     // Navegación
     var nav = el('div','wz-nav');
     var undo = el('button','wz-btn', '↶ Deshacer (volver a nivel ' + (L - 1) + ')');
@@ -3286,12 +3626,15 @@
       renderFicha({container: body, only: ['foco']});
       renderFocusPicker(body);
     }
+    else if(step.k === 'companeros'){
+      renderCompanerosStep(body);
+    }
     else if(step.k === 'equipo'){
       body.appendChild(el('p','wz-p','Empiezas con 15 po. Puedes usar el kit de tu clase o comprar cada cosa por separado; lo que gastes se descuenta solo. La CA, los ataques y el daño se calculan solos.'));
       renderFicha({container: body, only: ['equipo']});
     }
     else if(step.k === 'resumen'){
-      renderFicha({container: body, only: ['resumen']});
+      renderFicha({container: body, only: ['resumen', 'companeros']});
       var pend = steps.filter(function(s){ return s.k !== 'resumen' && stepStatus(s.k) !== 'ok'; });
       if(pend.length){
         var pb = el('div','ficha-grants');
