@@ -498,6 +498,27 @@ window.PF2Install = (function(){
   .dice-d{font-size:12.5px; color:#5a4a35;}
   .deg3{color:#1d7a3a;} .deg2{color:#2f6b3f;} .deg1{color:#a0561e;} .deg0{color:#a33;}
   @keyframes diceIn{from{transform:translateY(6px); opacity:0;} to{transform:none; opacity:1;}}
+  .dice-clear{font:inherit; font-size:12.5px; border:1px solid rgba(51,38,25,0.3); background:transparent; border-radius:6px; padding:1px 8px; margin-right:6px; cursor:pointer;}
+  .dice-stage{position:fixed; inset:0; z-index:950; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:rgba(10,20,14,0.35); cursor:pointer; animation:stageIn .15s ease-out;}
+  .dice-stage.out{opacity:0; transition:opacity .25s;}
+  .dice-row3d{display:flex; flex-wrap:wrap; justify-content:center; gap:14px; max-width:90vw;}
+  .die{position:relative; width:96px; height:96px; animation:dieTumble .85s cubic-bezier(.2,.7,.3,1) both; filter:drop-shadow(0 8px 10px rgba(0,0,0,0.45));}
+  .die svg{width:100%; height:100%; fill:#f6ecd6; stroke:#7a3b1f; stroke-width:3.5; stroke-linejoin:round;}
+  .die svg .in, .die svg polyline, .die svg line{fill:none; stroke-width:2; opacity:.55;}
+  .die-n{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; font-weight:700; font-size:30px; color:#3a2210; padding-top:4px;}
+  .die-f4 .die-n{padding-top:26px; font-size:26px;} .die-f20 .die-n{padding-top:12px;} .die-f10 .die-n, .die-f100 .die-n{padding-bottom:14px;}
+  .die-k{position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:12px; color:#f6ecd6; letter-spacing:.05em;}
+  .die.landed{animation:none; transform:none;} .die.landed .die-n{animation:diePop .3s ease-out;}
+  .die.crit svg{fill:#d8f0d6; stroke:#1d7a3a;} .die.crit .die-n{color:#1d7a3a;}
+  .die.fumble svg{fill:#f6d6d6; stroke:#a33;} .die.fumble .die-n{color:#a33;}
+  .die.max svg{stroke:#c9a227;}
+  .dice-cap{background:#f6ecd6; color:#2a1f14; border-radius:10px; padding:6px 14px; font-size:16px; display:flex; gap:10px; align-items:baseline; box-shadow:0 6px 18px rgba(0,0,0,0.3);}
+  .dice-cap b{font-size:28px; color:#7a3b1f;} .dice-cap em{font-style:normal; font-weight:700;}
+  .dice-more{color:#f6ecd6; font-size:13px;}
+  @keyframes dieTumble{0%{transform:translate(-40vw,-30px) rotate(-540deg) scale(.6); opacity:0;} 60%{transform:translate(8px,6px) rotate(20deg) scale(1.05); opacity:1;} 80%{transform:translate(-3px,0) rotate(-8deg);} 100%{transform:none;}}
+  @keyframes diePop{0%{transform:scale(1.5);} 100%{transform:scale(1);}}
+  @keyframes stageIn{from{opacity:0;} to{opacity:1;}}
+  @media print{ .dice-stage{display:none !important;} }
   @media print{ .dice-panel{display:none !important;} }
   .act-cost{display:inline-block; min-width:2.2em; color:var(--accent); font-weight:700;}
   .act-orig{color:var(--ink-soft);}
@@ -3517,11 +3538,11 @@ window.PF2Install = (function(){
   function rollExpr(expr){
     expr = String(expr || '').replace(/\s+/g, '').replace(/−/g, '-').toLowerCase();
     if(!/^[+-]?(\d*d\d+|\d+)([+-](\d*d\d+|\d+))*$/.test(expr)) return null;
-    var total = 0, parts = [];
+    var total = 0, parts = [], dice = [];
     expr.replace(/([+-]?)(\d*)d(\d+)|([+-]?)(\d+)/g, function(m, s1, n, f, s2, k){
       if(f){
         var sign = s1 === '-' ? -1 : 1, cnt = Math.min(100, parseInt(n || '1', 10)), faces = parseInt(f, 10), rolls = [];
-        for(var i = 0; i < cnt; i++) rolls.push(rnd(faces));
+        for(var i = 0; i < cnt; i++){ var rv = rnd(faces); rolls.push(rv); dice.push({f: faces, v: rv}); }
         var sum = rolls.reduce(function(a, b){ return a + b; }, 0);
         total += sign * sum; parts.push((sign < 0 ? '− ' : (parts.length ? '+ ' : '')) + cnt + 'd' + faces + ' [' + rolls.join(', ') + ']');
       } else if(k){
@@ -3530,7 +3551,7 @@ window.PF2Install = (function(){
       }
       return m;
     });
-    return {total: total, detail: parts.join(' ')};
+    return {total: total, detail: parts.join(' '), dice: dice};
   }
   function diceDC(){ var i = document.getElementById('diceDC'); var v = i ? parseInt(i.value, 10) : NaN; return isNaN(v) ? null : v; }
   var DEGREE = ['Fallo crítico', 'Fallo', 'Éxito', 'Éxito crítico'];
@@ -3541,17 +3562,73 @@ window.PF2Install = (function(){
       if(d === 20) deg = Math.min(3, deg + 1);
       if(d === 1) deg = Math.max(0, deg - 1);
     }
-    pushRoll({label: label, total: total, detail: '1d20 [' + d + '] ' + (mod < 0 ? '− ' + Math.abs(mod) : '+ ' + mod), nat: d, deg: deg, dc: dc});
+    pushRoll({label: label, total: total, detail: '1d20 [' + d + '] ' + (mod < 0 ? '− ' + Math.abs(mod) : '+ ' + mod), nat: d, deg: deg, dc: dc, dice: [{f: 20, v: d}]});
   }
   function rollDamage(label, expr, crit){
     var r = rollExpr(expr); if(!r) return;
-    pushRoll({label: label, total: crit ? r.total * 2 : r.total, detail: r.detail + (crit ? ' → ×2' : ''), dmg: true});
+    pushRoll({label: label, total: crit ? r.total * 2 : r.total, detail: r.detail + (crit ? ' → ×2' : ''), dmg: true, dice: r.dice});
   }
   function pushRoll(entry){
     entry.t = new Date();
-    diceLog.unshift(entry); if(diceLog.length > 20) diceLog.length = 20;
-    var p = document.getElementById('dicePanel'); if(p){ p.classList.add('open'); p.style.display = ''; }
-    drawDiceLog(true);
+    function commit(){
+      diceLog.unshift(entry); if(diceLog.length > 20) diceLog.length = 20;
+      var p = document.getElementById('dicePanel'); if(p){ p.classList.add('open'); p.style.display = ''; }
+      drawDiceLog(true);
+    }
+    var reduce = false;
+    try{ reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    if(reduce || !entry.dice || !entry.dice.length) commit(); else animateDice(entry, commit);
+  }
+  // ---- Animación de dados ----
+  function dieShape(f){
+    var P = {
+      4: '<polygon points="50,8 95,88 5,88"/>',
+      6: '<rect x="10" y="10" width="80" height="80" rx="12"/>',
+      8: '<polygon points="50,3 96,50 50,97 4,50"/><line x1="4" y1="50" x2="96" y2="50"/>',
+      10: '<polygon points="50,3 94,40 50,97 6,40"/><polyline points="6,40 50,58 94,40"/><line x1="50" y1="58" x2="50" y2="97"/>',
+      12: '<polygon points="50,4 95,37 78,93 22,93 5,37"/><polygon points="50,24 74,42 65,72 35,72 26,42" class="in"/>',
+      20: '<polygon points="50,3 93,27 93,73 50,97 7,73 7,27"/><polygon points="50,24 76,68 24,68" class="in"/><polyline points="50,3 50,24"/><polyline points="93,73 76,68"/><polyline points="7,73 24,68"/><polyline points="7,27 24,68"/><polyline points="93,27 76,68"/><polyline points="24,68 50,97 76,68"/><polyline points="7,27 50,24 93,27"/>'
+    };
+    return P[f] || P[f === 100 ? 10 : 6] || P[6];
+  }
+  function animateDice(entry, done){
+    var old = document.getElementById('diceStage'); if(old) old.remove();
+    var stage = el('div','dice-stage'); stage.id = 'diceStage';
+    var shown = entry.dice.slice(0, 10);
+    var row = el('div','dice-row3d');
+    var nodes = shown.map(function(d, i){
+      var w = el('div','die die-f' + d.f);
+      w.style.animationDelay = (i * 60) + 'ms';
+      w.innerHTML = '<svg viewBox="0 0 100 100">' + dieShape(d.f) + '</svg><span class="die-n">' + rnd(d.f) + '</span><span class="die-k">d' + d.f + '</span>';
+      row.appendChild(w);
+      return w;
+    });
+    stage.appendChild(row);
+    if(entry.dice.length > shown.length) stage.appendChild(el('div','dice-more', '+' + (entry.dice.length - shown.length) + ' dados más'));
+    var cap = el('div','dice-cap', escapeHtml(entry.label));
+    stage.appendChild(cap);
+    document.body.appendChild(stage);
+    var t0 = Date.now(), finished = false;
+    var iv = setInterval(function(){
+      nodes.forEach(function(n, i){ n.querySelector('.die-n').textContent = rnd(shown[i].f); });
+    }, 70);
+    function settle(){
+      clearInterval(iv);
+      nodes.forEach(function(n, i){
+        var d = shown[i];
+        n.querySelector('.die-n').textContent = d.v;
+        n.classList.add('landed');
+        if(d.f === 20 && d.v === 20) n.classList.add('crit');
+        if(d.f === 20 && d.v === 1) n.classList.add('fumble');
+        if(d.f !== 20 && d.v === d.f) n.classList.add('max');
+      });
+      cap.innerHTML = escapeHtml(entry.label) + '<b>' + entry.total + '</b>' + (entry.deg !== null && entry.deg !== undefined ? '<em class="deg' + entry.deg + '">' + DEGREE[entry.deg] + '</em>' : '');
+      done();
+      setTimeout(close, 1500);
+    }
+    function close(){ if(finished) return; finished = true; stage.classList.add('out'); setTimeout(function(){ stage.remove(); }, 250); }
+    stage.addEventListener('click', function(){ if(!nodes[0].classList.contains('landed')){ clearTimeout(st); settle(); } close(); });
+    var st = setTimeout(settle, 850);
   }
   function drawDiceLog(flash){
     var box = document.getElementById('diceLog'); if(!box) return;
@@ -3569,7 +3646,7 @@ window.PF2Install = (function(){
     var p = el('div','dice-panel');
     p.id = 'dicePanel';
     p.innerHTML = '<button type="button" class="dice-fab" id="diceFab" title="Dados">🎲</button>' +
-      '<div class="dice-box"><div class="dice-head"><b>Dados</b><button type="button" class="dice-x" id="diceClose">✕</button></div>' +
+      '<div class="dice-box"><div class="dice-head"><b>Dados</b><span><button type="button" class="dice-clear" id="diceClear" title="Borrar el historial">🗑 Limpiar</button><button type="button" class="dice-x" id="diceClose">✕</button></span></div>' +
       '<div class="dice-quick">' + [4, 6, 8, 10, 12, 20, 100].map(function(n){ return '<button type="button" data-q="1d' + n + '">d' + n + '</button>'; }).join('') + '</div>' +
       '<div class="dice-row"><input id="diceExpr" placeholder="p. ej. 2d6+3" autocomplete="off"><button type="button" id="diceGo">Tirar</button></div>' +
       '<div class="dice-row"><label>CD <input id="diceDC" type="number" inputmode="numeric" placeholder="—"></label><small>Si pones una CD, te dice el grado de éxito.</small></div>' +
@@ -3577,8 +3654,9 @@ window.PF2Install = (function(){
     document.body.appendChild(p);
     document.getElementById('diceFab').addEventListener('click', function(){ p.classList.toggle('open'); });
     document.getElementById('diceClose').addEventListener('click', function(){ p.classList.remove('open'); });
+    document.getElementById('diceClear').addEventListener('click', function(){ diceLog.length = 0; drawDiceLog(false); });
     p.querySelectorAll('[data-q]').forEach(function(b){ b.addEventListener('click', function(){ var e = b.getAttribute('data-q'); if(e === '1d20') rollCheck('d20', 0); else rollDamage(e, e, false); }); });
-    function go(){ var v = document.getElementById('diceExpr').value; var r = rollExpr(v); if(!r){ document.getElementById('diceExpr').classList.add('bad'); return; } document.getElementById('diceExpr').classList.remove('bad'); pushRoll({label: v, total: r.total, detail: r.detail, dmg: true}); }
+    function go(){ var v = document.getElementById('diceExpr').value; var r = rollExpr(v); if(!r){ document.getElementById('diceExpr').classList.add('bad'); return; } document.getElementById('diceExpr').classList.remove('bad'); pushRoll({label: v, total: r.total, detail: r.detail, dmg: true, dice: r.dice}); }
     document.getElementById('diceGo').addEventListener('click', go);
     document.getElementById('diceExpr').addEventListener('keydown', function(e){ if(e.key === 'Enter') go(); });
     drawDiceLog(false);
