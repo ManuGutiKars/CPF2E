@@ -472,6 +472,24 @@ window.PF2Install = (function(){
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .act-cost{display:inline-block; min-width:2.2em; color:var(--accent); font-weight:700;}
+  .act-orig{color:var(--ink-soft);}
+  .act-skills{display:flex; flex-direction:column; gap:2px;}
+  .act-skill{display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; padding:4px 0; border-bottom:1px solid rgba(51,38,25,0.08);}
+  .act-skill-n{min-width:170px;} .act-skill-n small{color:var(--ink-soft);}
+  .act-skill-a{display:flex; flex-wrap:wrap; gap:4px; flex:1;}
+  .act-chip{font:inherit; font-size:13px; padding:2px 8px; border-radius:999px; border:1px solid rgba(51,38,25,0.25); background:transparent; color:var(--ink); cursor:pointer;}
+  .act-chip.tr{font-weight:700; border-color:var(--accent);}
+  .act-more{color:var(--ink-soft); align-self:center;}
+  .act-desc{margin:4px 0 8px;}
+  .act-basic div{padding:2px 0;}
+  #printSheet .hj-g-p6{display:grid; grid-template-columns:1fr 1fr; gap:5mm;}
+  #printSheet .hj-act2{font-size:8pt; line-height:1.3; border-bottom:1px dotted #bbb; padding:1mm 0;}
+  #printSheet .hj-act2-h{font-size:9pt;} #printSheet .hj-act2-c{display:inline-block; min-width:9mm; font-weight:700;}
+  #printSheet .hj-acttbl td{font-size:8pt; vertical-align:top; padding:1mm 1.5mm;} #printSheet .hj-acttbl td:first-child{white-space:nowrap;}
+  .ficha-weapon-mode{font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); min-width:110px;}
+  .ficha-weapon.innate{border-left-color:#c9a227;}
+  .ficha-weapon-name{margin-bottom:4px;}
   .anc-img{display:block; object-fit:cover; background:rgba(51,38,25,0.06);}
   .anc-img.card{width:76px; height:76px; object-position:50% 8%; border-radius:6px; border:1px solid rgba(201,162,39,0.6); grid-row:1 / span 4; align-self:start;}
   .wz-card.has-img{display:grid; grid-template-columns:76px 1fr; column-gap:10px; align-content:start;}
@@ -1259,8 +1277,14 @@ window.PF2Install = (function(){
     if(ficha.mejoras.ancAlternativa) return 2;
     return a.mejoras.filter(function(x){ return x === 'libre'; }).length;
   }
+  // Atributo clave del pícaro según su artimaña
+  var RACKET_KEY = {'Thief':['des'], 'Ruffian':['des','fue'], 'Scoundrel':['des','car'], 'Mastermind':['des','int'], 'Avenger':['des','sab'], 'Eldritch Trickster':['des','int','sab','car']};
   function claveOptions(c){
     if(!c) return [];
+    if(c.id === 'Rogue'){
+      var rk = ((ficha.subclases || {}).racket || [])[0];
+      if(rk && RACKET_KEY[rk]) return RACKET_KEY[rk];
+    }
     if(c.atributoClave.indexOf('otro') !== -1) return ATRS.map(function(a){ return a.k; });
     return c.atributoClave;
   }
@@ -1283,7 +1307,7 @@ window.PF2Install = (function(){
     if(fTrasfondo()) ficha.mejoras.trasfondo.slice(0,2).forEach(boost);
     if(c){
       var opts = claveOptions(c);
-      boost(opts.length === 1 ? opts[0] : ficha.mejoras.clase);
+      boost(opts.length === 1 ? opts[0] : (opts.indexOf(ficha.mejoras.clase) !== -1 ? ficha.mejoras.clase : null));
     }
     ficha.mejoras.n1.slice(0,4).forEach(boost);
     if(isGradual()){ var gm = gradualMap(); GRADUAL_NIVELES.forEach(function(n){ if(ficha.nivel >= n && gm[n]) boost(gm[n]); }); }
@@ -1632,6 +1656,7 @@ window.PF2Install = (function(){
     if(want('conjuros')) renderConjurosSection(main);
     if(want('foco')) renderFocoSection(main);
     if(want('companeros')) renderCompanerosSection(main, false);
+    if(want('acciones') && (!only || only.indexOf('acciones') !== -1 || !opts.container)) renderAccionesSection(main);
 
     // ---- Resumen ----
     if(want('resumen') && a && c){
@@ -1726,7 +1751,7 @@ window.PF2Install = (function(){
     }
     if(!opts.container){
       main.classList.add('ficha-ro');
-      Array.prototype.forEach.call(main.querySelectorAll('.ficha-section select, .ficha-section input, .ficha-section button'), function(x){ x.disabled = true; });
+      Array.prototype.forEach.call(main.querySelectorAll('.ficha-section select, .ficha-section input, .ficha-section button:not(.act-chip)'), function(x){ x.disabled = true; });
     }
   }
 
@@ -2062,28 +2087,75 @@ window.PF2Install = (function(){
     if(info.flexible && (skillName === 'Acrobacias' || skillName === 'Atletismo')) return 0;
     return info.checkPen;
   }
-  function weaponCalc(w, slot, mod){
+  // ¿Tiene la clase/subclase indicada?
+  function hasSubclass(tipo, en){ return ((ficha.subclases || {})[tipo] || []).indexOf(en) !== -1; }
+  function isMonk(){ var c = fClase(); return !!(c && c.id === 'Monk'); }
+  function sneakDice(){ var c = fClase(); if(!c || c.id !== 'Rogue') return 0; var L = ficha.nivel; return L >= 17 ? 4 : L >= 11 ? 3 : L >= 5 ? 2 : 1; }
+  // Ataques que el personaje tiene siempre (p. ej. el puño poderoso del monje)
+  function innateStrikes(){
+    var out = [];
+    if(isMonk()){
+      var f = findBy(eqData().armas, 'id', 'Fist');
+      if(f){
+        var w = JSON.parse(JSON.stringify(f));
+        w.dado = '1d6'; w.nombre = 'Puño (puño poderoso)';
+        w.rasgos = w.rasgos.filter(function(t){ return !/^no letal$/i.test(t); });
+        w.rasgosEn = w.rasgosEn.filter(function(t){ return t !== 'nonlethal'; });
+        out.push({w: w, slot: {id: 'Fist', potencia: 0, golpe: 0}, innate: true, nota: 'Puño poderoso: 1d6 y sin penalizador al hacer ataques letales con tus ataques sin armas.'});
+      }
+    }
+    return out;
+  }
+  // mode: undefined (normal) | 'lanzada' (arma cuerpo a cuerpo arrojadiza usada a distancia)
+  function weaponCalc(w, slot, mod, mode){
     var c = fClase();
     var rank = eqRank(w.categoria);
     var tr = w.rasgosEn || [];
-    var ranged = w.tipo === 'distancia';
-    var attr = ranged ? mod.des : (tr.indexOf('finesse') !== -1 ? Math.max(mod.fue, mod.des) : mod.fue);
+    var thrown = tr.indexOf('thrown') !== -1;
+    var ranged = w.tipo === 'distancia' || mode === 'lanzada';
+    var finesse = tr.indexOf('finesse') !== -1;
+    var attrK = ranged ? 'des' : (finesse && mod.des >= mod.fue ? 'des' : 'fue');
     var pot = slot.potencia || 0;
-    var atk = attr + profBonus(rank) + pot;
+    var atk = mod[attrK] + profBonus(rank) + pot;
     var agile = tr.indexOf('agile') !== -1;
     var dice = 1 + (slot.golpe || 0);
     var die = (w.dado || '1d4').replace(/^\d+/, '');
-    var bonus = 0;
-    if(!ranged || tr.indexOf('thrown') !== -1) bonus += mod.fue;
-    else if(tr.indexOf('propulsive') !== -1) bonus += mod.fue > 0 ? Math.floor(mod.fue/2) : mod.fue;
+    var parts = [], bonus = 0;
+    // Atributo al daño: cuerpo a cuerpo y arrojadizas suman Fuerza; propulsión, la mitad si es positiva; resto de distancia, nada
+    var dmgK = null, dmgV = 0;
+    if(!ranged || thrown){ dmgK = 'fue'; dmgV = mod.fue; }
+    else if(tr.indexOf('propulsive') !== -1){ dmgK = 'fue'; dmgV = mod.fue > 0 ? Math.floor(mod.fue / 2) : mod.fue; }
+    // Pícaro ladrón: Destreza en lugar de Fuerza con armas sutiles cuerpo a cuerpo
+    if(!ranged && finesse && c && c.id === 'Rogue' && hasSubclass('racket', 'Thief') && mod.des >= mod.fue){ dmgK = 'des'; dmgV = mod.des; }
+    if(dmgK && dmgV){ bonus += dmgV; parts.push((dmgK === 'des' ? 'Des ' : (tr.indexOf('propulsive') !== -1 && ranged && !thrown ? '½ Fue ' : 'Fue ')) + fmtMod(dmgV)); }
     var esp = c && c.especializacion ? c.especializacion : {};
     if(rank >= 2 && esp.normal && ficha.nivel >= esp.normal){
       var sb = rank; // experto 2, maestro 3, legendario 4
       if(esp.mayor && ficha.nivel >= esp.mayor) sb *= 2;
-      bonus += sb;
+      bonus += sb; parts.push('especialización +' + sb);
     }
     var dmg = dice + die + (bonus ? (bonus > 0 ? ' + ' + bonus : ' − ' + Math.abs(bonus)) : '');
-    return {atk: atk, map: agile ? [4,8] : [5,10], dmg: dmg, rank: rank};
+    var extra = [];
+    var sd = sneakDice();
+    if(sd && (ranged || agile || finesse)) extra.push('+' + sd + 'd6 de precisión con ataque furtivo (objetivo desprevenido)');
+    return {atk: atk, map: agile ? [4,8] : [5,10], dmg: dmg, rank: rank, attr: attrK, dmgParts: parts, extra: extra, ranged: ranged};
+  }
+  function strikeCalcHtml(w, k, label){
+    return '<div class="ficha-weapon-calc">' + (label ? '<span class="ficha-weapon-mode">' + escapeHtml(label) + '</span>' : '') +
+      '<span class="ficha-weapon-atk">' + fmtMod(k.atk) + ' <small>(' + fmtMod(k.atk - k.map[0]) + ' / ' + fmtMod(k.atk - k.map[1]) + ')</small></span>' +
+      '<span class="ficha-weapon-dmg">' + escapeHtml(k.dmg) + ' ' + escapeHtml(DMG_LABEL[w.tipoDano] || w.tipoDano || '') + '</span>' +
+      '<span class="ficha-note">ataque con ' + (k.attr === 'des' ? 'Destreza' : 'Fuerza') + (k.dmgParts.length ? ' · daño: ' + escapeHtml(k.dmgParts.join(', ')) : ' · daño sin atributo') +
+      (k.extra.length ? ' · ' + escapeHtml(k.extra.join(' · ')) : '') + '</span></div>';
+  }
+  function weaponInfoHtml(w, k){
+    return '<div class="ficha-note">' + escapeHtml([w.tipo === 'distancia' ? 'Distancia' + (w.alcance ? ' ' + w.alcance + ' pies' : '') : 'Cuerpo a cuerpo', 'Manos ' + w.manos, w.grupo].concat(w.rasgos).filter(Boolean).join(' · ')) +
+      (k.rank === 0 ? ' · <b>no entrenado</b>' : '') + '</div>';
+  }
+  // Líneas de ataque de un arma: normal y, si es cuerpo a cuerpo arrojadiza, lanzada
+  function strikeLines(w, slot, mod){
+    var lines = [{label: '', k: weaponCalc(w, slot, mod)}];
+    if(w.tipo !== 'distancia' && (w.rasgosEn || []).indexOf('thrown') !== -1){ lines[0].label = 'Cuerpo a cuerpo'; lines.push({label: 'Lanzada', k: weaponCalc(w, slot, mod, 'lanzada')}); }
+    return lines;
   }
 
   function qtyInput(slot){
@@ -2132,6 +2204,15 @@ window.PF2Install = (function(){
       return {group: 'Armas ' + EQ_CAT_LABEL[cat] + ' (' + PROF_LABEL[eqRank(cat)].toLowerCase() + ')',
               items: D.armas.filter(function(w){ return w.categoria === cat; }).map(function(w){ return {value:w.id, label:w.nombre + ' — ' + w.dado + ' ' + (w.tipoDano||'') + rar(w) + (w.precio ? ' · ' + fmtMoney(w.precio) : '')}; })};
     });
+    innateStrikes().forEach(function(x){
+      var r = el('div','ficha-weapon innate');
+      r.appendChild(el('div','ficha-weapon-name', '<b>' + escapeHtml(x.w.nombre) + '</b> <small>· siempre disponible</small>'));
+      var kk = weaponCalc(x.w, x.slot, mod);
+      r.appendChild(el('div', null, strikeCalcHtml(x.w, kk, '')));
+      r.appendChild(el('div', null, weaponInfoHtml(x.w, kk)));
+      if(x.nota) r.appendChild(el('div','ficha-note', escapeHtml(x.nota)));
+      sE.appendChild(r);
+    });
     e.armas.forEach(function(slot, i){
       var w = findBy(D.armas, 'id', slot.id);
       var r = el('div','ficha-weapon');
@@ -2145,19 +2226,16 @@ window.PF2Install = (function(){
       top.appendChild(del);
       r.appendChild(top);
       if(w){
-        var k = weaponCalc(w, slot, mod);
-        r.appendChild(el('div','ficha-weapon-calc',
-          '<span class="ficha-weapon-atk">' + fmtMod(k.atk) + ' <small>(' + fmtMod(k.atk - k.map[0]) + ' / ' + fmtMod(k.atk - k.map[1]) + ')</small></span>' +
-          '<span class="ficha-weapon-dmg">' + escapeHtml(k.dmg) + ' ' + escapeHtml(DMG_LABEL[w.tipoDano] || w.tipoDano || '') + '</span>' +
-          '<span class="ficha-note">' + escapeHtml([w.tipo === 'distancia' ? 'Distancia' + (w.alcance ? ' ' + w.alcance + ' pies' : '') : 'Cuerpo a cuerpo', 'Manos ' + w.manos, w.grupo].concat(w.rasgos).filter(Boolean).join(' · ')) +
-          (k.rank === 0 ? ' · <b>no entrenado</b>' : '') + '</span>'));
+        var ls = strikeLines(w, slot, mod);
+        ls.forEach(function(x){ r.appendChild(el('div', null, strikeCalcHtml(w, x.k, x.label))); });
+        r.appendChild(el('div', null, weaponInfoHtml(w, ls[0].k)));
       }
       sE.appendChild(r);
     });
     var add = el('button','char-btn ficha-add','+ Añadir arma');
     add.addEventListener('click', function(){ change(function(){ e.armas.push({id: 'Fist', potencia:0, golpe:0}); }); });
     sE.appendChild(add);
-    sE.appendChild(el('div','ficha-note','Ataque: competencia + Fuerza (Destreza a distancia o con sutil) + runa de potencia. Entre paréntesis, el 2.º y 3.er ataque. El daño incluye Fuerza (cuerpo a cuerpo y arrojadizas; la mitad con propulsión) y la especialización en armas.'));
+    sE.appendChild(el('div','ficha-note','Ataque: competencia + Fuerza (Destreza a distancia, al lanzar o con sutil) + runa de potencia. Entre paréntesis, el 2.º y 3.er ataque. Daño: las armas cuerpo a cuerpo y las arrojadizas suman Fuerza; las de propulsión, la mitad de la Fuerza si es positiva; el resto de armas a distancia (arcos, ballestas…) no suman atributo. El pícaro ladrón suma Destreza con armas sutiles.'));
     // Material
     sE.appendChild(el('div','ficha-boost-label','Material'));
     var ml = el('div','eq-mat');
@@ -2608,17 +2686,18 @@ window.PF2Install = (function(){
     }).join('');
 
     var per = rankAt(c, 'per');
-    var strikes = (eq.armas || []).map(function(slot){
-      var w = findBy(eqData().armas, 'id', slot.id); if(!w) return '';
-      var k = weaponCalc(w, slot, m);
-      var ranged = w.tipo === 'distancia', tr = w.rasgosEn || [];
-      var attrV = ranged ? m.des : (tr.indexOf('finesse') !== -1 ? Math.max(m.fue, m.des) : m.fue);
-      return '<div class="hj-strike"><div class="hj-st-top"><div class="hj-f grow"><div class="hj-fv">' + E(w.nombre + (slot.potencia ? ' +' + slot.potencia : '') + (slot.golpe ? ' ' + ['','de golpe','de golpe mayor','de golpe superior'][slot.golpe] : '')) +
-        '</div><div class="hj-fl">' + (ranged ? 'Arma a distancia' : 'Arma cuerpo a cuerpo') + '</div></div>' +
+    function strikeBox(w, slot, k, suffix){
+      var nm = w.nombre + (slot.potencia ? ' +' + slot.potencia : '') + (slot.golpe ? ' ' + ['','de golpe','de golpe mayor','de golpe superior'][slot.golpe] : '') + (suffix ? ' (' + suffix + ')' : '');
+      return '<div class="hj-strike"><div class="hj-st-top"><div class="hj-f grow"><div class="hj-fv">' + E(nm) +
+        '</div><div class="hj-fl">' + (k.ranged ? 'Arma a distancia' : 'Arma cuerpo a cuerpo') + '</div></div>' +
         '<div class="hj-st-atk">' + S(k.atk) + '<small>' + S(k.atk - k.map[0]) + ' / ' + S(k.atk - k.map[1]) + '</small></div>' +
-        parts([[attrV, ranged ? 'Des' : 'Fue'], [prof(k.rank), 'Comp'], [slot.potencia || 0, 'Obj']]) +
+        parts([[m[k.attr], k.attr === 'des' ? 'Des' : 'Fue'], [prof(k.rank), 'Comp'], [slot.potencia || 0, 'Obj']]) +
         '<div class="hj-f"><div class="hj-fv">' + E(k.dmg) + ' ' + E(w.tipoDano || '') + '</div><div class="hj-fl">Daño</div></div></div>' +
-        '<div class="hj-f hj-wide"><div class="hj-fv small">' + E([ranged && w.alcance ? 'Incremento ' + w.alcance + ' pies' : ''].concat(w.rasgos).filter(Boolean).join(', ')) + '</div><div class="hj-fl">Rasgos y notas</div></div></div>';
+        '<div class="hj-f hj-wide"><div class="hj-fv small">' + E([k.ranged && w.alcance ? 'Incremento ' + w.alcance + ' pies' : ''].concat(w.rasgos).concat(k.extra).filter(Boolean).join(', ')) + '</div><div class="hj-fl">Rasgos y notas</div></div></div>';
+    }
+    var strikes = innateStrikes().map(function(x){ return strikeBox(x.w, x.slot, weaponCalc(x.w, x.slot, m), ''); }).join('') + (eq.armas || []).map(function(slot){
+      var w = findBy(eqData().armas, 'id', slot.id); if(!w) return '';
+      return strikeLines(w, slot, m).map(function(x){ return strikeBox(w, slot, x.k, x.label === 'Lanzada' ? 'lanzada' : ''); }).join('');
     }).join('');
     if(!strikes) strikes = '<div class="hj-strike empty"><div class="hj-f hj-wide"><div class="hj-fv"></div><div class="hj-fl">Arma</div></div></div>';
     var cd = c ? {r: rankAt(c,'cd')} : {r:0};
@@ -2743,7 +2822,26 @@ window.PF2Install = (function(){
       p5 = title('Compañeros') + '<div class="hj-comp">' + blocks.join('') + '</div>' +
         '<div class="hj-foot"><span>Página ' + (p4 ? 'cinco' : 'cuatro') + ' — Compañeros</span><span></span></div>';
     }
-    return '<div class="hj-page">' + p1 + '</div><div class="hj-page">' + p2 + '</div><div class="hj-page">' + p3 + '</div>' + (p4 ? '<div class="hj-page">' + p4 + '</div>' : '') + (p5 ? '<div class="hj-page">' + p5 + '</div>' : '');
+    var p6 = '';
+    if(c){
+      var AC = characterActions();
+      var pn = 4 + (p4 ? 1 : 0) + (p5 ? 1 : 0);
+      var NUM = ['','uno','dos','tres','cuatro','cinco','seis','siete'];
+      function actRow(x){
+        var g = x.glyph || costLabel(x.d.coste, x.d.rasgos);
+        return '<div class="hj-act2"><div class="hj-act2-h"><span class="hj-act2-c">' + E(g) + '</span> <b>' + E(x.d.nombre) + '</b>' + (x.d.rasgos.length ? ' <i>(' + E(x.d.rasgos.join(', ')) + ')</i>' : '') + '</div>' +
+          (x.d.requisitos ? '<div><b>Requisitos</b> ' + E(x.d.requisitos) + '</div>' : '') + (x.d.desencadenante ? '<div><b>Desencadenante</b> ' + E(x.d.desencadenante) + '</div>' : '') +
+          '<div>' + E(shortText(x.d.desc, 260)) + '</div></div>';
+      }
+      var leftA = (AC.clase.length ? title('Acciones de clase') + AC.clase.map(actRow).join('') : '') + (AC.dotes.length ? title('Acciones de dotes') + AC.dotes.map(actRow).join('') : '');
+      var skillsA = title('Acciones de habilidad') + '<table class="hj-tbl hj-acttbl">' + AC.habilidad.map(function(h){
+        return '<tr><td><b>' + E(h.n) + '</b> ' + S(h.v) + '</td><td>' + h.acts.map(function(a){ return (a.entrenado ? '<b>' : '') + E(actLabel(a.d)) + (a.entrenado ? '</b>' : ''); }).join(', ') + '</td></tr>';
+      }).join('') + '</table><div class="hj-mini">En negrita, las que requieren estar entrenado. ◆ acción · ◆◆ dos · ◆◆◆ tres · ⤾ reacción · ◇ gratuita.</div>' +
+        title('Acciones básicas') + '<div class="hj-mini">' + AC.basicas.map(function(d){ return E(actLabel(d)); }).join(' · ') + '</div>';
+      p6 = '<div class="hj-g-p6"><div>' + (leftA || title('Acciones de clase') + '<div class="hj-mini">—</div>') + '</div><div>' + skillsA + '</div></div>' +
+        '<div class="hj-foot"><span>Página ' + (NUM[pn] || pn) + ' — Acciones</span><span></span></div>';
+    }
+    return '<div class="hj-page">' + p1 + '</div><div class="hj-page">' + p2 + '</div><div class="hj-page">' + p3 + '</div>' + (p4 ? '<div class="hj-page">' + p4 + '</div>' : '') + (p5 ? '<div class="hj-page">' + p5 + '</div>' : '') + (p6 ? '<div class="hj-page">' + p6 + '</div>' : '');
   }
   function printFicha(){
     var el = document.getElementById('printSheet');
@@ -2806,7 +2904,7 @@ window.PF2Install = (function(){
     if(k === 'atributos'){
       if(!a || !t || !c) return 'todo';
       var mj = ficha.mejoras;
-      var ok = mj.ancLibres.length >= ancFreeCount(a) && mj.trasfondo.length >= 2 && (claveOptions(c).length === 1 || mj.clase) && mj.n1.length >= 4;
+      var ok = mj.ancLibres.length >= ancFreeCount(a) && mj.trasfondo.length >= 2 && (claveOptions(c).length === 1 || claveOptions(c).indexOf(mj.clase) !== -1) && mj.n1.length >= 4;
       if(isGradual()) GRADUAL_NIVELES.forEach(function(n){ if(ficha.nivel >= n && !gradualMap()[n]) ok = false; });
       else MEJORA_NIVELES.forEach(function(n){ if(ficha.nivel >= n && (mj['n'+n] || []).length < 4) ok = false; });
       return ok ? 'ok' : 'part';
@@ -3255,6 +3353,121 @@ window.PF2Install = (function(){
       else if(im.parentNode) im.parentNode.removeChild(im);
     });
     return im;
+  }
+
+  // ---- Acciones del personaje ----
+  var COST_GLYPH = {'1':'◆','2':'◆◆','3':'◆◆◆','R':'⤾','F':'◇','1-2':'◆ a ◆◆','1-3':'◆ a ◆◆◆','2-3':'◆◆ a ◆◆◆'};
+  function costLabel(coste, rasgos){
+    if(COST_GLYPH[coste]) return COST_GLYPH[coste];
+    rasgos = rasgos || [];
+    if(rasgos.indexOf('Exploración') !== -1) return 'exploración';
+    if(rasgos.indexOf('Tiempo libre') !== -1) return 'tiempo libre';
+    return '';
+  }
+  var FEAT_COST = {action:'◆', reaction:'⤾', free:'◇'};
+  // «◆ Trepar» o «Reparar (exploración)»
+  function actLabel(d){ var g = costLabel(d.coste, d.rasgos); return COST_GLYPH[d.coste] ? g + ' ' + d.nombre : d.nombre + (g ? ' (' + g + ')' : ''); }
+  function actData(){ return (BASE && BASE.acciones) || {defs:{}, habilidad:{}, basicas:[], clase:{}, subclase:{}}; }
+  function characterActions(){
+    var D = actData(), c = fClase(), L = ficha.nivel, out = {clase: [], dotes: [], habilidad: [], basicas: []};
+    var seen = {};
+    function addDef(id, origen){ var d = D.defs[id]; if(!d || seen[id]) return; seen[id] = true; out.clase.push({d: d, origen: origen}); }
+    if(c){
+      (D.clase[c.id] || []).filter(function(x){ return x.nivel <= L; }).forEach(function(x){ addDef(x.id, c.nombre + (x.nivel > 1 ? ' (nivel ' + x.nivel + ')' : '')); });
+      (c.subclases || []).forEach(function(sub){
+        (ficha.subclases[sub.tipo] || []).forEach(function(en){
+          var o = findBy(sub.opciones, 'en', en);
+          (D.subclase[sub.tipo + '|' + en] || []).forEach(function(id){ addDef(id, sub.etiqueta + ' ' + (o ? o.nombre : en)); });
+        });
+      });
+    }
+    // Dotes con acción, reacción o acción gratuita
+    var byId = {}; FEATS.forEach(function(f){ byId[String(f.id)] = f; });
+    var fs = {};
+    Object.keys(ficha.dotes || {}).forEach(function(k){ var d = ficha.dotes[k]; var lv = parseInt(k.split('-')[1], 10) || 1; if(d && lv <= L && byId[String(d.id)]) fs[d.id] = byId[String(d.id)]; });
+    activeGrants().forEach(function(x){ if(x.g.tipo === 'dote' && x.item) fs[x.item.id] = x.item; });
+    Object.keys(chosenFeats || {}).forEach(function(id){ if(chosenFeats[id] && byId[id]) fs[id] = byId[id]; });
+    Object.keys(fs).forEach(function(id){
+      var f = fs[id];
+      if(!f.actionType || f.actionType === 'passive') return;
+      var full = f.fulldesc || '';
+      var trig = (full.match(/\*\*Desencadenante\*\*\s*([^\n;]*)/) || [])[1] || '';
+      var req = (full.match(/\*\*Requisitos?\*\*\s*([^\n;]*)/) || [])[1] || '';
+      var m = full.match(/^\s*\[?(◆◆◆|◆◆|◆)/);
+      out.dotes.push({d: {nombre: f.name, coste: '', rasgos: (f.traits || []).filter(function(t){ return !/^(General|Habilidad|Ascendencia)$/i.test(t); }),
+        desencadenante: trig.trim(), requisitos: req.trim(), desc: f.desc || ''}, glyph: m ? m[1] : FEAT_COST[f.actionType], origen: 'Dote de nivel ' + (f.level || 1)});
+    });
+    out.dotes.sort(function(a, b){ return a.d.nombre.localeCompare(b.d.nombre, 'es'); });
+    // Habilidades
+    if(c){
+      var sk = computeSkills(), mod = computeAttrs().mod, ai = armorInfo(mod);
+      var names = SKILLS.map(function(x){ return x.n; }).concat(Object.keys(sk.ranks).filter(isLore).sort());
+      names.forEach(function(n){
+        var list = D.habilidad[isLore(n) ? 'Saber' : n]; if(!list) return;
+        var r = sk.ranks[n] || 0;
+        if(isLore(n) && !r) return;
+        var acts = list.filter(function(a){ return !a.entrenado || r >= 1; }).map(function(a){ return {d: D.defs[a.id], entrenado: a.entrenado}; }).filter(function(a){ return a.d; });
+        var v = mod[skillAttr(n)] + profBonus(r) + skillArmorPenalty(n, ai);
+        out.habilidad.push({n: n, r: r, v: v, acts: acts, faltan: list.length - acts.length});
+      });
+    }
+    out.basicas = D.basicas.map(function(id){ return D.defs[id]; }).filter(Boolean);
+    return out;
+  }
+  function actionDetailHtml(d){
+    return (d.requisitos ? '<div><b>Requisitos</b> ' + escapeHtml(d.requisitos) + '</div>' : '') +
+      (d.desencadenante ? '<div><b>Desencadenante</b> ' + escapeHtml(d.desencadenante) + '</div>' : '') +
+      '<div>' + escapeHtml(d.desc || '') + '</div>';
+  }
+  function renderAccionesSection(main){
+    var c = fClase(); if(!c) return;
+    var A = characterActions();
+    var sec = section('Acciones');
+    function block(title, list){
+      if(!list.length) return;
+      sec.appendChild(el('div','ficha-boost-label', title));
+      list.forEach(function(x){
+        var det = el('details','ficha-rasgo act-item');
+        var g = x.glyph || costLabel(x.d.coste, x.d.rasgos);
+        det.innerHTML = '<summary><span class="act-cost">' + escapeHtml(g) + '</span> <b>' + escapeHtml(x.d.nombre) + '</b>' +
+          (x.d.rasgos.length ? ' <small>(' + escapeHtml(x.d.rasgos.join(', ')) + ')</small>' : '') +
+          (x.origen ? ' <small class="act-orig">· ' + escapeHtml(x.origen) + '</small>' : '') + '</summary><div>' + actionDetailHtml(x.d) + '</div>';
+        sec.appendChild(det);
+      });
+    }
+    block('De tu clase', A.clase);
+    block('De tus dotes', A.dotes);
+    if(A.habilidad.length){
+      sec.appendChild(el('div','ficha-boost-label','Acciones de habilidad'));
+      var tbl = el('div','act-skills');
+      A.habilidad.forEach(function(h){
+        var row = el('div','act-skill' + (h.r ? ' tr' : ''));
+        row.appendChild(el('span','act-skill-n', '<b>' + escapeHtml(h.n) + '</b> ' + fmtMod(h.v) + (h.r ? '' : ' <small>sin entrenar</small>')));
+        var box = el('span','act-skill-a');
+        h.acts.forEach(function(a){
+          var b = el('button','act-chip' + (a.entrenado ? ' tr' : ''), escapeHtml(actLabel(a.d)));
+          b.type = 'button';
+          b.addEventListener('click', function(){
+            var open = row.nextSibling && row.nextSibling.classList && row.nextSibling.classList.contains('act-desc') && row.nextSibling.dataset.k === a.d.nombre;
+            if(row.nextSibling && row.nextSibling.classList && row.nextSibling.classList.contains('act-desc')) row.parentNode.removeChild(row.nextSibling);
+            if(!open){ var dd = el('div','spell-detail act-desc', '<b>' + escapeHtml(a.d.nombre) + '</b>' + (a.d.rasgos.length ? ' <small>(' + escapeHtml(a.d.rasgos.join(', ')) + ')</small>' : '') + actionDetailHtml(a.d)); dd.dataset.k = a.d.nombre; row.parentNode.insertBefore(dd, row.nextSibling); }
+          });
+          box.appendChild(b);
+        });
+        if(h.faltan) box.appendChild(el('small','act-more', '+' + h.faltan + ' si te entrenas'));
+        row.appendChild(box);
+        tbl.appendChild(row);
+      });
+      sec.appendChild(tbl);
+      sec.appendChild(el('div','ficha-note','Pulsa una acción para ver qué hace. ◆ acción · ◆◆ dos acciones · ◆◆◆ tres acciones · ⤾ reacción · ◇ acción gratuita. Las marcadas en negrita requieren estar entrenado.'));
+    }
+    if(A.basicas.length){
+      var bd = el('details','ficha-rasgo');
+      bd.innerHTML = '<summary><b>Acciones básicas</b> <small>(las tiene todo el mundo)</small></summary><div class="act-basic">' +
+        A.basicas.map(function(d){ return '<div><span class="act-cost">' + escapeHtml(costLabel(d.coste, d.rasgos)) + '</span> <b>' + escapeHtml(d.nombre) + '</b> — ' + escapeHtml(shortText(d.desc, 160)) + '</div>'; }).join('') + '</div>';
+      sec.appendChild(bd);
+    }
+    main.appendChild(sec);
   }
 
   // ---- Subir de nivel ----
