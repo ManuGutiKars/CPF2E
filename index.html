@@ -472,6 +472,33 @@ window.PF2Install = (function(){
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .rollable{cursor:pointer;} .rollable:hover{outline:2px solid var(--accent); outline-offset:-2px;}
+  .roll-ico{font-size:.55em; vertical-align:middle; opacity:.65;}
+  .roll-row{flex-basis:100%; display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px;}
+  .dice-btn{font:inherit; font-size:12.5px; padding:2px 8px; border-radius:999px; border:1px solid var(--accent); background:var(--accent-soft); color:var(--ink); cursor:pointer;}
+  .dice-btn.dmg{border-color:#8a5a14; background:rgba(201,162,39,0.18);}
+  .dice-btn:hover{filter:brightness(0.95);}
+  .dice-panel{position:fixed; right:16px; bottom:16px; z-index:900; font-family:'EB Garamond',serif;}
+  .dice-fab{width:54px; height:54px; border-radius:50%; border:2px solid #c9a227; background:#1E3428; font-size:26px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,0.35);}
+  .dice-box{display:none; position:absolute; right:0; bottom:64px; width:320px; max-width:calc(100vw - 32px); max-height:70vh; overflow:auto; background:#f6ecd6; color:#2a1f14; border:1px solid rgba(51,38,25,0.3); border-radius:12px; box-shadow:0 10px 32px rgba(0,0,0,0.35); padding:10px 12px;}
+  .dice-panel.open .dice-box{display:block;}
+  .dice-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;} .dice-x{border:none; background:none; font-size:16px; cursor:pointer;}
+  .dice-quick{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;}
+  .dice-quick button, #diceGo{font:inherit; padding:3px 9px; border-radius:6px; border:1px solid #7a3b1f; background:#fff8; cursor:pointer;}
+  .dice-row{display:flex; gap:6px; align-items:center; margin:4px 0; flex-wrap:wrap;} .dice-row small{color:#6b5a45;}
+  #diceExpr{flex:1; font:inherit; padding:3px 6px; min-width:0;} #diceExpr.bad{border-color:#a33; background:#fdd;}
+  #diceDC{width:60px; font:inherit; padding:2px 4px;}
+  .dice-log{margin-top:6px; display:flex; flex-direction:column; gap:4px;}
+  .dice-empty{font-size:13px; color:#6b5a45;}
+  .dice-entry{display:grid; grid-template-columns:1fr auto; gap:0 8px; padding:5px 8px; border-radius:8px; background:#fff6; border:1px solid rgba(51,38,25,0.12);}
+  .dice-entry.fresh{animation:diceIn .35s ease-out; border-color:#7a3b1f;}
+  .dice-entry.nat20 .dice-t{color:#1d7a3a;} .dice-entry.nat1 .dice-t{color:#a33;}
+  .dice-l{font-weight:600; font-size:14px;} .dice-t{grid-row:span 2; font-size:26px; font-weight:700; color:#7a3b1f; align-self:center;}
+  .dice-entry.dmg .dice-t{color:#8a5a14;}
+  .dice-d{font-size:12.5px; color:#5a4a35;}
+  .deg3{color:#1d7a3a;} .deg2{color:#2f6b3f;} .deg1{color:#a0561e;} .deg0{color:#a33;}
+  @keyframes diceIn{from{transform:translateY(6px); opacity:0;} to{transform:none; opacity:1;}}
+  @media print{ .dice-panel{display:none !important;} }
   .act-cost{display:inline-block; min-width:2.2em; color:var(--accent); font-weight:700;}
   .act-orig{color:var(--ink-soft);}
   .act-skills{display:flex; flex-direction:column; gap:2px;}
@@ -1667,7 +1694,8 @@ window.PF2Install = (function(){
       function stat(label, stat, modKey, base){
         var r = rankAt(c, stat), v = (base || 0) + profBonus(r) + (modKey ? m[modKey] : claveMod);
         if(['fort','ref','vol'].indexOf(stat) !== -1 && curArmor()) v += (eqState().resistencia || 0);
-        return '<div class="ficha-stat"><span class="ficha-stat-v">' + (base ? v : fmtMod(v)) + '</span><span class="ficha-stat-l">' + label + '</span><span class="ficha-stat-r">' + PROF_LABEL[r] + '</span></div>';
+        var ra = base ? '' : ' data-roll="check" data-mod="' + v + '" data-label="' + escapeHtml(label) + '" title="Tirar 1d20 ' + fmtMod(v) + '"';
+        return '<div class="ficha-stat' + (base ? '' : ' rollable') + '"' + ra + '><span class="ficha-stat-v">' + (base ? v : fmtMod(v)) + (base ? '' : ' <span class="roll-ico">🎲</span>') + '</span><span class="ficha-stat-l">' + label + '</span><span class="ficha-stat-r">' + PROF_LABEL[r] + '</span></div>';
       }
       var sR = section('Resumen');
       var stats = el('div','ficha-stats');
@@ -1751,7 +1779,7 @@ window.PF2Install = (function(){
     }
     if(!opts.container){
       main.classList.add('ficha-ro');
-      Array.prototype.forEach.call(main.querySelectorAll('.ficha-section select, .ficha-section input, .ficha-section button:not(.act-chip)'), function(x){ x.disabled = true; });
+      Array.prototype.forEach.call(main.querySelectorAll('.ficha-section select, .ficha-section input, .ficha-section button:not(.act-chip):not([data-roll])'), function(x){ x.disabled = true; });
     }
   }
 
@@ -2140,12 +2168,22 @@ window.PF2Install = (function(){
     if(sd && (ranged || agile || finesse)) extra.push('+' + sd + 'd6 de precisión con ataque furtivo (objetivo desprevenido)');
     return {atk: atk, map: agile ? [4,8] : [5,10], dmg: dmg, rank: rank, attr: attrK, dmgParts: parts, extra: extra, ranged: ranged};
   }
+  function strikeRollHtml(w, k, label){
+    var nm = escapeHtml(w.nombre + (label ? ' (' + label.toLowerCase() + ')' : ''));
+    var expr = k.dmg.replace(/−/g, '-').replace(/\s+/g, '');
+    return '<span class="roll-row">' +
+      [0, 1, 2].map(function(i){ var v = k.atk - (i ? k.map[i - 1] : 0); return '<button type="button" class="dice-btn" data-roll="check" data-mod="' + v + '" data-label="' + nm + ' — ' + ['1.er','2.º','3.er'][i] + ' ataque">🎲 ' + (i + 1) + '.º ' + fmtMod(v) + '</button>'; }).join('') +
+      '<button type="button" class="dice-btn dmg" data-roll="dmg" data-expr="' + escapeHtml(expr) + '" data-label="Daño · ' + nm + '">🎲 Daño</button>' +
+      '<button type="button" class="dice-btn dmg" data-roll="dmg" data-crit="1" data-expr="' + escapeHtml(expr) + '" data-label="Daño crítico · ' + nm + '">🎲 Crítico ×2</button>' +
+      (k.extra.length && sneakDice() ? '<button type="button" class="dice-btn dmg" data-roll="dmg" data-expr="' + sneakDice() + 'd6" data-label="Ataque furtivo">🎲 +' + sneakDice() + 'd6 furtivo</button>' : '') +
+      '</span>';
+  }
   function strikeCalcHtml(w, k, label){
     return '<div class="ficha-weapon-calc">' + (label ? '<span class="ficha-weapon-mode">' + escapeHtml(label) + '</span>' : '') +
       '<span class="ficha-weapon-atk">' + fmtMod(k.atk) + ' <small>(' + fmtMod(k.atk - k.map[0]) + ' / ' + fmtMod(k.atk - k.map[1]) + ')</small></span>' +
       '<span class="ficha-weapon-dmg">' + escapeHtml(k.dmg) + ' ' + escapeHtml(DMG_LABEL[w.tipoDano] || w.tipoDano || '') + '</span>' +
       '<span class="ficha-note">ataque con ' + (k.attr === 'des' ? 'Destreza' : 'Fuerza') + (k.dmgParts.length ? ' · daño: ' + escapeHtml(k.dmgParts.join(', ')) : ' · daño sin atributo') +
-      (k.extra.length ? ' · ' + escapeHtml(k.extra.join(' · ')) : '') + '</span></div>';
+      (k.extra.length ? ' · ' + escapeHtml(k.extra.join(' · ')) : '') + '</span>' + strikeRollHtml(w, k, label) + '</div>';
   }
   function weaponInfoHtml(w, k){
     return '<div class="ficha-note">' + escapeHtml([w.tipo === 'distancia' ? 'Distancia' + (w.alcance ? ' ' + w.alcance + ' pies' : '') : 'Cuerpo a cuerpo', 'Manos ' + w.manos, w.grupo].concat(w.rasgos).filter(Boolean).join(' · ')) +
@@ -3442,7 +3480,7 @@ window.PF2Install = (function(){
       var tbl = el('div','act-skills');
       A.habilidad.forEach(function(h){
         var row = el('div','act-skill' + (h.r ? ' tr' : ''));
-        row.appendChild(el('span','act-skill-n', '<b>' + escapeHtml(h.n) + '</b> ' + fmtMod(h.v) + (h.r ? '' : ' <small>sin entrenar</small>')));
+        row.appendChild(el('span','act-skill-n', '<button type="button" class="dice-btn" data-roll="check" data-mod="' + h.v + '" data-label="' + escapeHtml(h.n) + '">🎲</button> <b>' + escapeHtml(h.n) + '</b> ' + fmtMod(h.v) + (h.r ? '' : ' <small>sin entrenar</small>')));
         var box = el('span','act-skill-a');
         h.acts.forEach(function(a){
           var b = el('button','act-chip' + (a.entrenado ? ' tr' : ''), escapeHtml(actLabel(a.d)));
@@ -3468,6 +3506,95 @@ window.PF2Install = (function(){
       sec.appendChild(bd);
     }
     main.appendChild(sec);
+  }
+
+  // ---- Lanzador de dados ----
+  var diceLog = [];
+  function rnd(n){
+    try{ var a = new Uint32Array(1); crypto.getRandomValues(a); return 1 + (a[0] % n); }catch(e){ return 1 + Math.floor(Math.random() * n); }
+  }
+  // "2d6+3", "1d8-1", "d20" → {total, detail}
+  function rollExpr(expr){
+    expr = String(expr || '').replace(/\s+/g, '').replace(/−/g, '-').toLowerCase();
+    if(!/^[+-]?(\d*d\d+|\d+)([+-](\d*d\d+|\d+))*$/.test(expr)) return null;
+    var total = 0, parts = [];
+    expr.replace(/([+-]?)(\d*)d(\d+)|([+-]?)(\d+)/g, function(m, s1, n, f, s2, k){
+      if(f){
+        var sign = s1 === '-' ? -1 : 1, cnt = Math.min(100, parseInt(n || '1', 10)), faces = parseInt(f, 10), rolls = [];
+        for(var i = 0; i < cnt; i++) rolls.push(rnd(faces));
+        var sum = rolls.reduce(function(a, b){ return a + b; }, 0);
+        total += sign * sum; parts.push((sign < 0 ? '− ' : (parts.length ? '+ ' : '')) + cnt + 'd' + faces + ' [' + rolls.join(', ') + ']');
+      } else if(k){
+        var v = parseInt(k, 10) * (s2 === '-' ? -1 : 1);
+        total += v; parts.push((v < 0 ? '− ' : '+ ') + Math.abs(v));
+      }
+      return m;
+    });
+    return {total: total, detail: parts.join(' ')};
+  }
+  function diceDC(){ var i = document.getElementById('diceDC'); var v = i ? parseInt(i.value, 10) : NaN; return isNaN(v) ? null : v; }
+  var DEGREE = ['Fallo crítico', 'Fallo', 'Éxito', 'Éxito crítico'];
+  function rollCheck(label, mod){
+    var d = rnd(20), total = d + mod, dc = diceDC(), deg = null;
+    if(dc !== null){
+      deg = total >= dc + 10 ? 3 : total >= dc ? 2 : total <= dc - 10 ? 0 : 1;
+      if(d === 20) deg = Math.min(3, deg + 1);
+      if(d === 1) deg = Math.max(0, deg - 1);
+    }
+    pushRoll({label: label, total: total, detail: '1d20 [' + d + '] ' + (mod < 0 ? '− ' + Math.abs(mod) : '+ ' + mod), nat: d, deg: deg, dc: dc});
+  }
+  function rollDamage(label, expr, crit){
+    var r = rollExpr(expr); if(!r) return;
+    pushRoll({label: label, total: crit ? r.total * 2 : r.total, detail: r.detail + (crit ? ' → ×2' : ''), dmg: true});
+  }
+  function pushRoll(entry){
+    entry.t = new Date();
+    diceLog.unshift(entry); if(diceLog.length > 20) diceLog.length = 20;
+    var p = document.getElementById('dicePanel'); if(p){ p.classList.add('open'); p.style.display = ''; }
+    drawDiceLog(true);
+  }
+  function drawDiceLog(flash){
+    var box = document.getElementById('diceLog'); if(!box) return;
+    box.innerHTML = diceLog.length ? '' : '<div class="dice-empty">Pulsa 🎲 en una salvación, habilidad o ataque de la ficha, o tira un dado aquí.</div>';
+    diceLog.forEach(function(e, i){
+      var cls = 'dice-entry' + (i === 0 && flash ? ' fresh' : '') + (e.nat === 20 ? ' nat20' : '') + (e.nat === 1 ? ' nat1' : '') + (e.dmg ? ' dmg' : '');
+      var d = el('div', cls, '<div class="dice-l">' + escapeHtml(e.label) + '</div><div class="dice-t">' + e.total + '</div>' +
+        '<div class="dice-d">' + escapeHtml(e.detail) + (e.nat === 20 ? ' · <b>¡20 natural!</b>' : '') + (e.nat === 1 ? ' · <b>1 natural</b>' : '') +
+        (e.deg !== null && e.deg !== undefined ? ' · CD ' + e.dc + ': <b class="deg' + e.deg + '">' + DEGREE[e.deg] + '</b>' : '') + '</div>');
+      box.appendChild(d);
+    });
+  }
+  function buildDicePanel(){
+    if(document.getElementById('dicePanel')) return;
+    var p = el('div','dice-panel');
+    p.id = 'dicePanel';
+    p.innerHTML = '<button type="button" class="dice-fab" id="diceFab" title="Dados">🎲</button>' +
+      '<div class="dice-box"><div class="dice-head"><b>Dados</b><button type="button" class="dice-x" id="diceClose">✕</button></div>' +
+      '<div class="dice-quick">' + [4, 6, 8, 10, 12, 20, 100].map(function(n){ return '<button type="button" data-q="1d' + n + '">d' + n + '</button>'; }).join('') + '</div>' +
+      '<div class="dice-row"><input id="diceExpr" placeholder="p. ej. 2d6+3" autocomplete="off"><button type="button" id="diceGo">Tirar</button></div>' +
+      '<div class="dice-row"><label>CD <input id="diceDC" type="number" inputmode="numeric" placeholder="—"></label><small>Si pones una CD, te dice el grado de éxito.</small></div>' +
+      '<div class="dice-log" id="diceLog"></div></div>';
+    document.body.appendChild(p);
+    document.getElementById('diceFab').addEventListener('click', function(){ p.classList.toggle('open'); });
+    document.getElementById('diceClose').addEventListener('click', function(){ p.classList.remove('open'); });
+    p.querySelectorAll('[data-q]').forEach(function(b){ b.addEventListener('click', function(){ var e = b.getAttribute('data-q'); if(e === '1d20') rollCheck('d20', 0); else rollDamage(e, e, false); }); });
+    function go(){ var v = document.getElementById('diceExpr').value; var r = rollExpr(v); if(!r){ document.getElementById('diceExpr').classList.add('bad'); return; } document.getElementById('diceExpr').classList.remove('bad'); pushRoll({label: v, total: r.total, detail: r.detail, dmg: true}); }
+    document.getElementById('diceGo').addEventListener('click', go);
+    document.getElementById('diceExpr').addEventListener('keydown', function(e){ if(e.key === 'Enter') go(); });
+    drawDiceLog(false);
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('[data-roll]') : null;
+    if(!t) return;
+    e.preventDefault(); e.stopPropagation();
+    if(t.getAttribute('data-roll') === 'check') rollCheck(t.getAttribute('data-label'), parseInt(t.getAttribute('data-mod'), 10) || 0);
+    else rollDamage(t.getAttribute('data-label'), t.getAttribute('data-expr'), t.getAttribute('data-crit') === '1');
+  }, true);
+  function updateDicePanel(){
+    buildDicePanel();
+    var p = document.getElementById('dicePanel');
+    var show = mainTab === 'ficha' || (mainTab === 'inicio' && wizStep === 'equipo') || diceLog.length > 0;
+    p.style.display = (show && gameMode !== 'sf') ? '' : 'none';
   }
 
   // ---- Subir de nivel ----
@@ -4620,6 +4747,7 @@ window.PF2Install = (function(){
   }
 
   function render(){
+    try{ setTimeout(updateDicePanel, 0); }catch(e){}
     document.getElementById('main').classList.remove('ficha-ro');
     document.body.classList.toggle('char-view', isCharView());
     if(isCharView()){
