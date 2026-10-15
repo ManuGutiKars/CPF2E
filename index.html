@@ -472,6 +472,9 @@ window.PF2Install = (function(){
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .lv-gated{border-left:3px solid #c9a227; padding:2px 0 2px 10px; margin:6px 0;}
+  .lv-gated.future{opacity:.6;}
+  .lv-tag{display:inline-block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; background:#c9a227; color:#1E3428; border-radius:4px; padding:0 6px; margin-right:6px; font-weight:700;}
   .rollable{cursor:pointer;} .rollable:hover{outline:2px solid var(--accent); outline-offset:-2px;}
   .roll-ico{font-size:.55em; vertical-align:middle; opacity:.65;}
   .roll-row{flex-basis:100%; display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px;}
@@ -1638,7 +1641,7 @@ window.PF2Install = (function(){
             }));
             sC.appendChild(vrow);
           }
-          sC.appendChild(detailBox('<strong>' + escapeHtml(o.nombre) + '</strong><br>' + textToHtml(o.texto)));
+          sC.appendChild(detailBox('<strong>' + escapeHtml(o.nombre) + '</strong><br>' + levelGatedHtml(c, o.texto)));
         });
       });
     }
@@ -1802,6 +1805,33 @@ window.PF2Install = (function(){
       main.classList.add('ficha-ro');
       Array.prototype.forEach.call(main.querySelectorAll('.ficha-section select, .ficha-section input, .ficha-section button:not(.act-chip):not([data-roll])'), function(x){ x.disabled = true; });
     }
+  }
+
+  // Texto de subclase con las partes que se ganan a niveles más altos marcadas (p. ej. «Cazador magistral», nivel 17)
+  function headerLevel(c, h){
+    var hl = h.replace(/[:：]\s*$/, '').trim().toLowerCase();
+    var m = hl.match(/\((\d+)\.?[ºo°]?\)/); if(m) return parseInt(m[1], 10);
+    var r = (c.rasgos || []).filter(function(x){ return x.nombre.toLowerCase() === hl; })[0];
+    if(r) return r.nivel;
+    function lvOf(re){ var x = (c.rasgos || []).filter(function(y){ return re.test(y.nombre.toLowerCase()); })[0]; return x ? x.nivel : 0; }
+    if(/^aptitud de especializaci/.test(hl)) return lvOf(/^especializaci[oó]n en armas$/) || 7;
+    if(/beneficio de adepto/.test(hl)) return lvOf(/adepto del implemento/);
+    if(/beneficio de parag[oó]n/.test(hl)) return lvOf(/parag[oó]n del implemento/);
+    if(/^hazaña avanzada/.test(hl)) return 9;
+    if(/^hazaña mayor/.test(hl)) return 15;
+    return 0;
+  }
+  function levelGatedHtml(c, text){
+    var lines = String(text || '').split('\n'), out = [], cur = null;
+    function flush(){ if(!cur) return; var html = textToHtml(cur.lines.join('\n'));
+      out.push(cur.lv > 1 ? '<div class="lv-gated' + (ficha.nivel < cur.lv ? ' future' : '') + '"><span class="lv-tag">Nivel ' + cur.lv + (ficha.nivel < cur.lv ? ' · aún no' : '') + '</span>' + html + '</div>' : html); cur = null; }
+    lines.forEach(function(l){
+      var m = l.match(/^\s*(?:[-•]\s*)?\*\*([^*]+)\*\*/);
+      if(m){ flush(); cur = {lv: headerLevel(c, m[1]), lines: [l]}; }
+      else { if(!cur) cur = {lv: 0, lines: []}; cur.lines.push(l); }
+    });
+    flush();
+    return out.join('<br>');
   }
 
   // ---- Habilidades ----
@@ -3901,14 +3931,73 @@ window.PF2Install = (function(){
     list.appendChild(det);
   }
   // Selector de conjuros de foco de la clase (en el asistente)
+  var wizShowAllFocus = false;
+  var SIM_STOP = {qi:1, ki:1, de:1, del:1, la:1, el:1, los:1, las:1, y:1, con:1, en:1, al:1, a:1};
+  function keySim(a, b){
+    function tk(x){ return x.split(' ').filter(function(w){ return w.length > 1 && !SIM_STOP[w]; }); }
+    var A = tk(a), B = tk(b);
+    if(!A.length || !B.length) return 0;
+    var inter = A.filter(function(x){ return B.indexOf(x) !== -1; }).length;
+    return inter / Math.max(A.length, B.length);
+  }
+  // ¿Qué conjuros de foco permiten las dotes del personaje?
+  // - dotes que nombran el conjuro (en cursiva) → ese conjuro
+  // - dotes que dan «un conjuro de … de rango N» → cualquiera de rango N
+  function focusAvailability(list){
+    var byId = {}; FEATS.forEach(function(f){ byId[String(f.id)] = f; });
+    var mine = {}, L = ficha.nivel;
+    Object.keys(ficha.dotes || {}).forEach(function(k){ var d = ficha.dotes[k]; var lv = parseInt(k.split('-')[1], 10) || 1; if(d && lv <= L && byId[String(d.id)]) mine[d.id] = byId[String(d.id)]; });
+    ((ficha.auto && ficha.auto.dotes) || []).forEach(function(id){ if(byId[id]) mine[id] = byId[id]; });
+    Object.keys(chosenFeats || {}).forEach(function(id){ if(chosenFeats[id] && byId[id]) mine[id] = byId[id]; });
+    var ranks = {}, ok = {}, why = [], tiers = {};
+    Object.keys(mine).forEach(function(id){
+      var f = mine[id], t = (f.fulldesc || f.desc || '');
+      var hit = false;
+      var re = /conjuros? [^.]{0,80}?de rango (\d+)/gi, m;
+      while((m = re.exec(t))){ if(/obtienes|aprendes|ganas/i.test(t.slice(Math.max(0, m.index - 120), m.index + 10))){ ranks[parseInt(m[1], 10)] = true; hit = true; } }
+      var gains = /obtienes|aprendes|ganas|te otorga/i.test(t);
+      if(gains && /conjuros? de [a-záéíóúñ]+ inicial|conjuro de foco inicial/i.test(t)){ tiers[1] = true; hit = true; }
+      if(gains && /conjuros? de [a-záéíóúñ]+ avanzad|conjuro de foco avanzad/i.test(t)){ tiers[2] = true; hit = true; }
+      if(gains && /conjuros? de [a-záéíóúñ]+ mayor/i.test(t)){ tiers[3] = true; hit = true; }
+      var its = (t.match(/_([^_]{3,60})_/g) || []).map(function(x){ return normName(x.replace(/_/g, '')); });
+      var plain = ' ' + normName(t) + ' ';
+      list.forEach(function(sp){
+        var n = normName(sp.name);
+        if(n.length > 4 && (plain.indexOf(' ' + n + ' ') !== -1 || its.some(function(i){ return i === n || keySim(i, n) >= 0.75; }))){ ok[sp.id] = true; hit = true; }
+      });
+      if(hit) why.push(f.name);
+    });
+    list.forEach(function(sp){
+      if(isFocusCantrip(sp)) return;
+      var r = sp.rank || 1;
+      if(ranks[r] || (tiers[1] && r === 1) || (tiers[2] && r >= 2 && r <= 4) || (tiers[3] && r >= 5 && r <= 6)) ok[sp.id] = true;
+    });
+    return {ok: ok, why: why};
+  }
   function renderFocusPicker(container){
     var fi = focusInfo();
     if(!fi.fc) return;
-    var pool = FOCUS_SPELLS.filter(function(sp){ return sp.game !== 'sf' && sp.classKey === fi.fc.key; })
-      .sort(function(a,b){ return (a.group||'').localeCompare(b.group||'','es') || a.name.localeCompare(b.name,'es'); });
-    if(!pool.length) return;
+    var maxR = Math.max(1, Math.ceil(ficha.nivel / 2));
+    var all = FOCUS_SPELLS.filter(function(sp){ return sp.game !== 'sf' && sp.classKey === fi.fc.key; });
+    var av = focusAvailability(all);
+    var auto0 = (ficha.auto && ficha.auto.conjuros) || [];
+    function allowed(sp){
+      if(known[sp.id] || prepared[sp.id] || auto0.indexOf(String(sp.id)) !== -1) return true;
+      if(!isFocusCantrip(sp) && (sp.rank || 1) > maxR) return false;
+      return !!av.ok[sp.id];
+    }
+    var pool = all.filter(function(sp){ return wizShowAllFocus || allowed(sp); })
+      .sort(function(a,b){ return (a.group||'').localeCompare(b.group||'','es') || (a.rank||0) - (b.rank||0) || a.name.localeCompare(b.name,'es'); });
+    var hiddenN = all.length - all.filter(allowed).length;
     container.appendChild(el('div','ficha-boost-label','Elige tus conjuros de foco de ' + escapeHtml(fi.fc.label.toLowerCase())));
-    container.appendChild(el('div','ficha-note','Los que te concede la clase o la subclase ya vienen marcados. Marca los que ganes con dotes (por ejemplo, al subir de nivel).'));
+    container.appendChild(el('div','ficha-note','Los que te concede la clase o la subclase ya vienen marcados. El resto se obtiene con dotes: solo aparecen los que permiten tus dotes elegidas' +
+      (av.why.length ? ' (' + escapeHtml(av.why.join('; ')) + ')' : '') + ' y de rango ' + maxR + ' o menor.' + (hiddenN ? ' Hay ' + hiddenN + ' que aún no puedes elegir.' : '')));
+    var tg = el('label','ficha-check');
+    var tcb = document.createElement('input'); tcb.type = 'checkbox'; tcb.checked = !!wizShowAllFocus;
+    tcb.addEventListener('change', function(){ wizShowAllFocus = tcb.checked; render(); });
+    tg.appendChild(tcb); tg.appendChild(document.createTextNode(' Mostrar todos (si tu DJ te permite otro)'));
+    container.appendChild(tg);
+    if(!pool.length){ container.appendChild(el('div','ficha-note','Aún no tienes ninguna dote que te dé conjuros de foco. Elige una en el paso «Dotes» (por ejemplo, «Conjuros de qi» del monje).')); return; }
     var bar = el('div','wz-filter');
     var inp = document.createElement('input'); inp.type = 'search'; inp.placeholder = 'Buscar conjuro de foco…'; inp.value = wizFilter.foco || '';
     bar.appendChild(inp);
@@ -3923,7 +4012,8 @@ window.PF2Install = (function(){
         if((sp.group || '') !== lastG){ lastG = sp.group || ''; if(lastG) list.appendChild(el('div','wz-spell-g', escapeHtml(lastG))); }
         var on = !!(known[sp.id] || prepared[sp.id]);
         var tags = [];
-        if(isFocusCantrip(sp)) tags.push('truco');
+        if(isFocusCantrip(sp)) tags.push('truco'); else tags.push('rango ' + (sp.rank || 1));
+        if(!allowed(sp)) tags.push((!isFocusCantrip(sp) && (sp.rank || 1) > maxR) ? 'rango demasiado alto' : 'no lo permiten tus dotes');
         if(auto.indexOf(String(sp.id)) !== -1) tags.push('concedido');
         spellRow(list, sp, on, function(){
           if(prepared[sp.id] && !known[sp.id]) toggleSpell(sp.id); else toggleKnownSpell(sp.id);
