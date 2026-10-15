@@ -472,6 +472,11 @@ window.PF2Install = (function(){
   .wz-spell-t small{color:var(--ink-soft);}
   .wz-spell-t{flex:1; cursor:pointer;}
   .wz-spell.ro{padding-left:10px;}
+  .dom-chips{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px; margin:4px 0 10px;}
+  .dom-chip{font:inherit; text-align:left; border:1px solid rgba(51,38,25,0.25); border-radius:8px; padding:6px 10px; background:var(--parchment); color:var(--ink); cursor:pointer; display:flex; flex-direction:column; gap:2px;}
+  .dom-chip span{font-size:12.5px; color:var(--ink-soft);} .dom-chip small{color:var(--ink-soft);}
+  .dom-chip.on{border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent);}
+  .dom-chip.alt{border-style:dashed;}
   .lv-gated{border-left:3px solid #c9a227; padding:2px 0 2px 10px; margin:6px 0;}
   .lv-gated.future{opacity:.6;}
   .lv-tag{display:inline-block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; background:#c9a227; color:#1E3428; border-radius:4px; padding:0 6px; margin-right:6px; font-weight:700;}
@@ -1645,6 +1650,7 @@ window.PF2Install = (function(){
         });
       });
     }
+    if(c && needsDeity(c) && fDeidad()) sC.appendChild(detailBox(deityInfoHtml()));
     renderGrantsBox(sC);
     main.appendChild(sC);
     }
@@ -1807,6 +1813,61 @@ window.PF2Install = (function(){
     }
   }
 
+  // ---- Deidad y dominios (clérigo y campeón) ----
+  var DEITY_CLASSES = ['Cleric', 'Champion'];
+  function relData(){ return (BASE && BASE.religion) || {deidades: [], dominios: []}; }
+  function needsDeity(c){ c = c || fClase(); return !!(c && DEITY_CLASSES.indexOf(c.id) !== -1); }
+  function fDeidad(){ return ficha.deidad ? findBy(relData().deidades, 'id', ficha.deidad) : null; }
+  function domainById(id){ return findBy(relData().dominios, 'id', id); }
+  function myDomains(){ return (ficha.dominios || []).filter(function(id){ return domainById(id); }); }
+  // Habilidad de la deidad (la que el clérigo/campeón entrena por su deidad); null si hay que elegir
+  function deitySkill(c){
+    var d = fDeidad();
+    if(!needsDeity(c) || !d || !d.habilidad.length) return null;
+    return d.habilidad.length === 1 ? d.habilidad[0] : null;
+  }
+  function renderDeityPicker(body){
+    var c = fClase(); if(!needsDeity(c)) return;
+    var R = relData(), d = fDeidad();
+    body.appendChild(el('div','ficha-boost-label','Deidad'));
+    body.appendChild(el('div','ficha-note','Tu deidad determina tu habilidad de deidad, tu arma predilecta, tu fuente divina y los dominios que puedes elegir.'));
+    function dn(ids){ return ids.map(function(id){ var x = domainById(id); return x ? x.nombre : id; }).join(', '); }
+    cardPicker(body, 'deidad', R.deidades.map(function(x){
+      var w = x.arma.map(function(id){ var ww = findBy(eqData().armas, 'id', id); return ww ? ww.nombre : id; }).join(', ');
+      return {value: x.id, label: x.nombre, rareza: x.rareza, meta: 'Dominios: ' + dn(x.dominios) + (x.alternos.length ? ' (alt.: ' + dn(x.alternos) + ')' : ''),
+              sub: [x.categoria, w ? 'Arma: ' + w : '', x.habilidad.length ? 'Habilidad: ' + x.habilidad.join(' o ') : '', x.fuente.length ? 'Fuente: ' + x.fuente.join(' o ') : '', x.santificacion.length ? 'Santificación ' + x.santificacion.join(' o ') : ''].filter(Boolean).join(' · ')};
+    }), ficha.deidad || null, function(v){ change(function(){ if(ficha.deidad !== v){ ficha.deidad = v; ficha.dominios = []; } }); }, {placeholder: 'Buscar deidad…', max: 120});
+    if(!d) return;
+    body.appendChild(el('div','ficha-boost-label','Dominios de ' + escapeHtml(d.nombre) + ' <em>(' + myDomains().length + ' elegidos)</em>'));
+    body.appendChild(el('div','ficha-note','Marca el dominio (o dominios) cuyos conjuros obtienes con «Iniciado del dominio» u otras dotes. Los alternativos solo se pueden elegir con dotes como «Iniciado del dominio ampliado».'));
+    var box = el('div','dom-chips');
+    d.dominios.concat(d.alternos).forEach(function(id){
+      var x = domainById(id); if(!x) return;
+      var alt = d.alternos.indexOf(id) !== -1, on = (ficha.dominios || []).indexOf(id) !== -1;
+      var b = el('button','dom-chip' + (on ? ' on' : '') + (alt ? ' alt' : ''), '<b>' + escapeHtml(x.nombre) + '</b>' + (alt ? ' <small>alternativo</small>' : '') +
+        '<span>' + escapeHtml([x.inicial ? 'inicial: ' + x.inicial : '', x.avanzado ? 'avanzado: ' + x.avanzado : ''].filter(Boolean).join(' · ')) + '</span>');
+      b.type = 'button'; b.title = x.resumen || '';
+      b.addEventListener('click', function(){ change(function(){ ficha.dominios = ficha.dominios || []; toggleIn(ficha.dominios, id); }); });
+      box.appendChild(b);
+    });
+    body.appendChild(box);
+  }
+  function deityInfoHtml(){
+    var d = fDeidad(); if(!d) return '';
+    var w = d.arma.map(function(id){ var ww = findBy(eqData().armas, 'id', id); return ww ? ww.nombre : id; }).join(', ');
+    var doms = myDomains().map(function(id){ return domainById(id).nombre; });
+    return '<dl class="ficha-dl"><dt>Deidad</dt><dd>' + escapeHtml(d.nombre) + ' <small>(' + escapeHtml(d.categoria) + ')</small></dd>' +
+      (w ? '<dt>Arma predilecta</dt><dd>' + escapeHtml(w) + '</dd>' : '') +
+      (d.fuente.length ? '<dt>Fuente divina</dt><dd>' + escapeHtml(d.fuente.join(' o ')) + '</dd>' : '') +
+      (d.santificacion.length ? '<dt>Santificación</dt><dd>' + escapeHtml(d.santificacion.join(' o ')) + '</dd>' : '') +
+      (d.habilidad.length ? '<dt>Habilidad</dt><dd>' + escapeHtml(d.habilidad.join(' o ')) + '</dd>' : '') +
+      (d.atributos.length ? '<dt>Atributo divino</dt><dd>' + escapeHtml(d.atributos.map(function(k){ return ATR_NAME[k]; }).join(' o ')) + '</dd>' : '') +
+      (d.edictos ? '<dt>Edictos</dt><dd>' + escapeHtml(d.edictos) + '</dd>' : '') +
+      (d.anatemas ? '<dt>Anatemas</dt><dd>' + escapeHtml(d.anatemas) + '</dd>' : '') +
+      (d.conjuros.length ? '<dt>Conjuros de clérigo</dt><dd>' + escapeHtml(d.conjuros.join(', ')) + '</dd>' : '') +
+      '<dt>Dominios</dt><dd>' + escapeHtml(doms.length ? doms.join(', ') : '— (elige en el paso Clase)') + '</dd></dl>';
+  }
+
   // Texto de subclase con las partes que se ganan a niveles más altos marcadas (p. ej. «Cazador magistral», nivel 17)
   function headerLevel(c, h){
     var hl = h.replace(/[:：]\s*$/, '').trim().toLowerCase();
@@ -1879,7 +1940,9 @@ window.PF2Install = (function(){
     if(c){
       c.hab.fijas.forEach(function(n){ if(!train(n, 'Clase')) overlaps++; });
       c.hab.elegir.forEach(function(g, i){ var n = h.claseElegidas[i]; if(n && !train(n, 'Clase')) overlaps++; });
-      h.subclase.slice(0, c.hab.subclase).forEach(function(n){ if(!train(n, 'Subclase')) overlaps++; });
+      var dsk = deitySkill(c);
+      if(dsk){ if(!train(dsk, 'Deidad')) overlaps++; }
+      else h.subclase.slice(0, c.hab.subclase).forEach(function(n){ if(!train(n, 'Subclase')) overlaps++; });
     }
     var intM = intModAtLevel1();
     var libresN = c ? Math.max(0, c.hab.extra + intM) + overlaps : 0;
@@ -1957,6 +2020,7 @@ window.PF2Install = (function(){
     var auto = [];
     sk.bg.fixed.forEach(function(n){ auto.push(n + ' (trasfondo)'); });
     c.hab.fijas.forEach(function(n){ auto.push(n + ' (clase)'); });
+    if(deitySkill(c)) auto.push(deitySkill(c) + ' (deidad)');
     sH.appendChild(el('div','ficha-level-f', auto.length ? 'Entrenado automáticamente en: ' + escapeHtml(auto.join(', ')) : ''));
     sk.bg.notes.forEach(function(nt){ sH.appendChild(el('div','ficha-note', 'Trasfondo: ' + escapeHtml(nt))); });
     for(var i = 0; i < sk.bg.manual; i++) (function(i){ pickRow('Del trasfondo', h.trasfondoManual[i], function(v){ setAt(h.trasfondoManual, i, v); }); })(i);
@@ -1967,7 +2031,8 @@ window.PF2Install = (function(){
       row.appendChild(makeSelect(g.map(function(n){ return {value:n, label:n}; }), h.claseElegidas[i] || null, 'Elige: ' + g.join(' o '), function(v){ change(function(){ setAt(h.claseElegidas, i, v); }); }));
       sH.appendChild(row);
     });
-    for(var j = 0; j < c.hab.subclase; j++) (function(j){
+    if(deitySkill(c)) sH.appendChild(el('div','ficha-note','Habilidad de tu deidad (' + escapeHtml(fDeidad().nombre) + '): <b>' + escapeHtml(deitySkill(c)) + '</b>, entrenada automáticamente.'));
+    else for(var j = 0; j < c.hab.subclase; j++) (function(j){
       pickRow('De la subclase', h.subclase[j], function(v){ setAt(h.subclase, j, v); }, j === 0 ? 'Habilidad ' + c.hab.notaSubclase + ' (mira el texto de tu elección de clase).' : '');
     })(j);
 
@@ -2399,9 +2464,10 @@ window.PF2Install = (function(){
   function markedSpellsByRank(ci){
     var marks = ci.espontaneo ? known : prepared;
     var by = {}, fuera = 0;
+    var dz = (ci.clase && ci.clase.id === 'Cleric' && fDeidad()) ? fDeidad().conjuros.map(normName) : [];
     SPELLS.forEach(function(sp){
       if(!marks[sp.id]) return;
-      if(sp.school !== ci.key){ fuera++; return; }
+      if(sp.school !== ci.key && dz.indexOf(normName(sp.name)) === -1){ fuera++; return; }
       (by[sp.rank] = by[sp.rank] || []).push(sp);
     });
     Object.keys(by).forEach(function(r){ by[r].sort(function(a,b){ return a.name.localeCompare(b.name,'es'); }); });
@@ -2861,7 +2927,7 @@ window.PF2Install = (function(){
     // ================= PÁGINA 3 =================
     var p3 = '<div class="hj-g-p3"><div>' + title('Boceto del personaje') + '<div class="hj-sketch"></div></div><div>' + title('Origen y apariencia') +
       '<div class="hj-row2">' + ['Grupo étnico','Nacionalidad','Lugar de nacimiento','Edad','Género','Altura','Peso'].map(function(l){ return field(l,''); }).join('') + '</div>' + field('Apariencia','','tall') +
-      title('Personalidad') + '<div class="hj-row2">' + field('Actitud','','grow') + field('Dios o filosofía','','grow') + '</div><div class="hj-row2">' + field('Edictos','','grow tall2') + field('Anatemas','','grow tall2') + '</div>' +
+      title('Personalidad') + '<div class="hj-row2">' + field('Actitud','','grow') + field('Dios o filosofía', fDeidad() ? E(fDeidad().nombre + (myDomains().length ? ' (' + myDomains().map(function(id){ return domainById(id).nombre; }).join(', ') + ')' : '')) : '','grow') + '</div><div class="hj-row2">' + field('Edictos', fDeidad() ? E(fDeidad().edictos) : '','grow tall2') + field('Anatemas', fDeidad() ? E(fDeidad().anatemas) : '','grow tall2') + '</div>' +
       field('Le gusta','') + field('No le gusta','') + field('Frases comunes','') + '</div></div>' +
       title('Notas de la campaña') + '<div class="hj-g2b"><div class="hj-box notes"></div><div>' + field('Aliados','','tall') + field('Enemigos','','tall') + field('Organizaciones','','tall') + '</div></div>' +
       '<div class="hj-g2b"><div>' + title('Acciones y actividades') + [1,2,3,4].map(function(){ return '<div class="hj-act"><span>Nombre</span><span>Acciones</span><span>Rasgos</span><div>Efectos</div></div>'; }).join('') + '</div>' +
@@ -2988,6 +3054,7 @@ window.PF2Install = (function(){
       var ciS = casterInfo();
       var needTrad = c.lanzamiento && c.tradicion.length > 1 && !(ciS && ciS.trad);
       c.subclases.forEach(function(sb){ (ficha.subclases[sb.tipo] || []).forEach(function(en){ var o = findBy(sb.opciones,'en',en); if(o && o.variantes && !chosenVariant(sb, o)) missingSub = true; }); });
+      if(needsDeity(c) && !fDeidad()) missingSub = true;
       return (missingSub || needTrad) ? 'part' : 'ok';
     }
     if(k === 'atributos'){
@@ -3003,7 +3070,7 @@ window.PF2Install = (function(){
       var sk = computeSkills(), h = habState();
       var filled = h.libres.slice(0, sk.libresN).filter(Boolean).length >= sk.libresN &&
                    c.hab.elegir.every(function(g, i){ return h.claseElegidas[i]; }) &&
-                   h.subclase.slice(0, c.hab.subclase).filter(Boolean).length >= c.hab.subclase;
+                   (deitySkill(c) || h.subclase.slice(0, c.hab.subclase).filter(Boolean).length >= c.hab.subclase);
       var incOk = sk.incLevels.every(function(l){ return h.incrementos[l]; });
       return (filled && incOk) ? 'ok' : 'part';
     }
@@ -3949,7 +4016,7 @@ window.PF2Install = (function(){
     Object.keys(ficha.dotes || {}).forEach(function(k){ var d = ficha.dotes[k]; var lv = parseInt(k.split('-')[1], 10) || 1; if(d && lv <= L && byId[String(d.id)]) mine[d.id] = byId[String(d.id)]; });
     ((ficha.auto && ficha.auto.dotes) || []).forEach(function(id){ if(byId[id]) mine[id] = byId[id]; });
     Object.keys(chosenFeats || {}).forEach(function(id){ if(chosenFeats[id] && byId[id]) mine[id] = byId[id]; });
-    var ranks = {}, ok = {}, why = [], tiers = {};
+    var ranks = {}, ok = {}, why = [], tiers = {}, named = {};
     Object.keys(mine).forEach(function(id){
       var f = mine[id], t = (f.fulldesc || f.desc || '');
       var hit = false;
@@ -3963,13 +4030,29 @@ window.PF2Install = (function(){
       var plain = ' ' + normName(t) + ' ';
       list.forEach(function(sp){
         var n = normName(sp.name);
-        if(n.length > 4 && (plain.indexOf(' ' + n + ' ') !== -1 || its.some(function(i){ return i === n || keySim(i, n) >= 0.75; }))){ ok[sp.id] = true; hit = true; }
+        if(n.length > 4 && (plain.indexOf(' ' + n + ' ') !== -1 || its.some(function(i){ return i === n || keySim(i, n) >= 0.75; }))){ ok[sp.id] = true; named[sp.id] = true; hit = true; }
       });
       if(hit) why.push(f.name);
     });
+    // Dominios: si eres clérigo/campeón con deidad, solo los conjuros de tus dominios elegidos
+    var domIni = {}, domAdv = {}, allDom = {};
+    if(needsDeity() && fDeidad()){
+      relData().dominios.forEach(function(x){ if(x.inicial) allDom[normName(x.inicial)] = 1; if(x.avanzado) allDom[normName(x.avanzado)] = 1; });
+      myDomains().forEach(function(id){ var x = domainById(id); if(x.inicial) domIni[normName(x.inicial)] = 1; if(x.avanzado) domAdv[normName(x.avanzado)] = 1; });
+      if(myDomains().length) why.push('dominios: ' + myDomains().map(function(id){ return domainById(id).nombre; }).join(', '));
+    }
     list.forEach(function(sp){
+      var nm = normName(sp.name);
+      if(allDom[nm]){
+        if(named[sp.id]) return;
+        delete ok[sp.id];
+        if(domIni[nm] && (tiers[1] || ranks[1])) ok[sp.id] = true;
+        if(domAdv[nm] && (tiers[2] || ranks[4])) ok[sp.id] = true;
+        return;
+      }
       if(isFocusCantrip(sp)) return;
       var r = sp.rank || 1;
+      if(needsDeity() && fDeidad()){ if(ranks[r]) ok[sp.id] = true; return; }
       if(ranks[r] || (tiers[1] && r === 1) || (tiers[2] && r >= 2 && r <= 4) || (tiers[3] && r >= 5 && r <= 6)) ok[sp.id] = true;
     });
     return {ok: ok, why: why};
@@ -4050,8 +4133,16 @@ window.PF2Install = (function(){
     container.appendChild(bar);
     var list = el('div','wz-spells');
     container.appendChild(list);
-    var pool = SPELLS.filter(function(sp){ return sp.school === ci.key && sp.rank === wizSpellRank && sp.source !== 'Starfinder'; })
-                     .sort(function(a,b){ return a.name.localeCompare(b.name,'es'); });
+    var pool = SPELLS.filter(function(sp){ return sp.school === ci.key && sp.rank === wizSpellRank && sp.source !== 'Starfinder'; });
+    // Conjuros de clérigo que concede la deidad (pueden ser de otra tradición)
+    var dz = (fClase() && fClase().id === 'Cleric' && fDeidad()) ? fDeidad().conjuros.map(normName) : [];
+    var deitySp = {};
+    if(dz.length){
+      var have = {}; pool.forEach(function(sp){ have[normName(sp.name)] = 1; });
+      SPELLS.forEach(function(sp){ var n = normName(sp.name); if(dz.indexOf(n) !== -1 && sp.rank === wizSpellRank && sp.source !== 'Starfinder'){ deitySp[sp.id] = 1; if(!have[n]){ have[n] = 1; pool.push(sp); } } });
+      pool.forEach(function(sp){ if(dz.indexOf(normName(sp.name)) !== -1) deitySp[sp.id] = 1; });
+    }
+    pool.sort(function(a,b){ return a.name.localeCompare(b.name,'es'); });
     var auto = (ficha.auto && ficha.auto.conjuros) || [];
     function draw(){
       list.innerHTML = '';
@@ -4060,7 +4151,7 @@ window.PF2Install = (function(){
         spellRow(list, sp, !!marks[sp.id], function(){
           if(ci.espontaneo) toggleKnownSpell(sp.id); else toggleSpell(sp.id);
           render();
-        }, auto.indexOf(String(sp.id)) !== -1 ? ['concedido'] : []);
+        }, (auto.indexOf(String(sp.id)) !== -1 ? ['concedido'] : []).concat(deitySp[sp.id] ? ['de tu deidad'] : []));
       });
     }
     inp.addEventListener('input', function(){ wizFilter.conj = inp.value; draw(); });
@@ -4194,6 +4285,7 @@ window.PF2Install = (function(){
             }), cv ? cv.en : null, function(v){ change(function(){ ficha.variantes = ficha.variantes || {}; ficha.variantes[vk] = v; }); });
           });
         });
+        renderDeityPicker(body);
         if(c.lanzamiento && c.tradicion.length > 1){
           var stW = subclassTradition(c);
           body.appendChild(el('div','ficha-boost-label','Tradición mágica'));
